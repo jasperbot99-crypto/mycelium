@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
-from mycelium.domain.types import PropagationEvent
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from mycelium.domain.types import PropagationEvent
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +40,7 @@ class InProcessTransport:
                 self._listeners[agent_id](event),
                 timeout=self._timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "propagation_timeout: agent=%s event=%s timeout=%.1fs",
                 agent_id,

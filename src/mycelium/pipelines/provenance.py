@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from mycelium.domain.types import Fact, RelationType
-from mycelium.storage.protocols import FactRepository, RelationRepository
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from mycelium.storage.protocols import FactRepository, RelationRepository
 
 
 @dataclass(frozen=True)

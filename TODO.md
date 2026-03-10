@@ -166,4 +166,34 @@ _Deferred from Phase 1 core — must complete before Phase 2._
 - [x] `MyceliumClient.trace_provenance()`
 
 ## Phase 5: Open Source & Generalization
-_Not started._
+
+### Server Mode + API
+- [x] FastAPI app factory with startup/shutdown lifecycle (`create_app`)
+- [x] Shared Postgres pool + repository wiring in `ServerState`
+- [x] Background runners in server mode (ContradictionSweeper + DecayCycleRunner)
+- [x] Bearer API key auth for `/v1/*`
+- [x] REST endpoints for connect/disconnect, ingest/query/correct/verify/corroborate
+- [x] REST endpoints for conflict resolution, provenance, subscriptions/context, replay/ack
+- [x] Health/readiness/version endpoints (`/health`, `/ready`, `/version`)
+
+### TypeScript SDK
+- [x] `sdk/typescript` package scaffold
+- [x] Typed `MyceliumHttpClient` with HTTP parity for Phase 5 endpoints
+- [x] Retry + timeout + typed error mapping
+- [x] Node + OpenClaw-style examples
+
+### OSS Hardening
+- [x] CLI entrypoint: `mycelium-server`
+- [x] CI workflow for Python checks/tests + TS SDK typecheck
+- [x] Changelog + release notes template
+
+### Docs + Examples
+- [x] README updated to working beta with quickstarts
+- [x] Server mode deployment/auth docs
+- [x] API contract + troubleshooting docs
+- [x] End-to-end examples (library, server, conflict-resolution)
+
+### Benchmarks
+- [x] Reproducible benchmark runner (`benchmarks/run.py`)
+- [x] JSON + Markdown report output
+- [x] Baseline comparison input (`benchmarks/baseline.json`)

@@ -30,10 +30,13 @@ Scenario format:
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import yaml
 
@@ -127,9 +130,9 @@ class ScenarioRunner:
             if not isinstance(raw_agents_obj, list):
                 raise ValueError("scenario.agents must be a list")
             agent_defs: list[dict[str, Any]] = []
-            for raw_agent in cast(list[object], raw_agents_obj):
+            for raw_agent in cast("list[object]", raw_agents_obj):
                 if isinstance(raw_agent, dict):
-                    agent_defs.append(cast(dict[str, Any], raw_agent))
+                    agent_defs.append(cast("dict[str, Any]", raw_agent))
                 else:
                     raise ValueError("scenario.agents entries must be objects")
 
@@ -141,9 +144,9 @@ class ScenarioRunner:
             if not isinstance(raw_steps_obj, list):
                 raise ValueError("scenario.steps must be a list")
             steps: list[dict[str, Any]] = []
-            for raw_step in cast(list[object], raw_steps_obj):
+            for raw_step in cast("list[object]", raw_steps_obj):
                 if isinstance(raw_step, dict):
-                    steps.append(cast(dict[str, Any], raw_step))
+                    steps.append(cast("dict[str, Any]", raw_step))
                 else:
                     raise ValueError("scenario.steps entries must be objects")
 
@@ -160,10 +163,8 @@ class ScenarioRunner:
         finally:
             # Cleanup
             for client in self._clients.values():
-                try:
+                with contextlib.suppress(Exception):
                     await client.disconnect()
-                except Exception:
-                    pass
 
         return result
 
@@ -261,17 +262,16 @@ class ScenarioRunner:
                 message="Step was expected to fail but succeeded",
             )
 
-        if isinstance(expected_error, str):
-            if expected_error not in result.message:
-                return StepResult(
-                    step_index=index,
-                    action=action,
-                    passed=False,
-                    message=(
-                        f"Expected error containing '{expected_error}', got: "
-                        f"{result.message}"
-                    ),
-                )
+        if isinstance(expected_error, str) and expected_error not in result.message:
+            return StepResult(
+                step_index=index,
+                action=action,
+                passed=False,
+                message=(
+                    f"Expected error containing '{expected_error}', got: "
+                    f"{result.message}"
+                ),
+            )
 
         return StepResult(
             step_index=index,
@@ -379,7 +379,10 @@ class ScenarioRunner:
         if expected_count is not None and len(conflicts) != expected_count:
             return StepResult(
                 step_index=index, action="assert_conflict", passed=False,
-                message=f"Expected {expected_count} conflicts with status '{expected_status}', got {len(conflicts)}",
+                message=(
+                    f"Expected {expected_count} conflicts with status "
+                    f"'{expected_status}', got {len(conflicts)}"
+                ),
             )
 
         return StepResult(
@@ -585,7 +588,7 @@ class ScenarioRunner:
                 passed=False,
                 message="expect must be an object",
             )
-        expect_map = cast(dict[str, object], expect)
+        expect_map = cast("dict[str, object]", expect)
 
         fact = await self._fact_repo.get_by_id(fact_id)
         if fact is None:
@@ -611,37 +614,37 @@ class ScenarioRunner:
                 )
 
         min_corroboration_count = expect_map.get("min_corroboration_count")
-        if isinstance(min_corroboration_count, int):
-            if fact.corroboration_count < min_corroboration_count:
-                return StepResult(
-                    step_index=index,
-                    action="assert_fact",
-                    passed=False,
-                    message=(
-                        f"Expected corroboration_count >= {min_corroboration_count}, "
-                        f"got {fact.corroboration_count}"
-                    ),
-                )
+        if (
+            isinstance(min_corroboration_count, int)
+            and fact.corroboration_count < min_corroboration_count
+        ):
+            return StepResult(
+                step_index=index,
+                action="assert_fact",
+                passed=False,
+                message=(
+                    f"Expected corroboration_count >= {min_corroboration_count}, "
+                    f"got {fact.corroboration_count}"
+                ),
+            )
 
         min_confidence = expect_map.get("min_confidence")
-        if isinstance(min_confidence, (int, float)):
-            if fact.confidence < float(min_confidence):
-                return StepResult(
-                    step_index=index,
-                    action="assert_fact",
-                    passed=False,
-                    message=f"Expected confidence >= {min_confidence}, got {fact.confidence}",
-                )
+        if isinstance(min_confidence, (int, float)) and fact.confidence < float(min_confidence):
+            return StepResult(
+                step_index=index,
+                action="assert_fact",
+                passed=False,
+                message=f"Expected confidence >= {min_confidence}, got {fact.confidence}",
+            )
 
         max_confidence = expect_map.get("max_confidence")
-        if isinstance(max_confidence, (int, float)):
-            if fact.confidence > float(max_confidence):
-                return StepResult(
-                    step_index=index,
-                    action="assert_fact",
-                    passed=False,
-                    message=f"Expected confidence <= {max_confidence}, got {fact.confidence}",
-                )
+        if isinstance(max_confidence, (int, float)) and fact.confidence > float(max_confidence):
+            return StepResult(
+                step_index=index,
+                action="assert_fact",
+                passed=False,
+                message=f"Expected confidence <= {max_confidence}, got {fact.confidence}",
+            )
 
         return StepResult(
             step_index=index,
@@ -661,7 +664,7 @@ class ScenarioRunner:
                 passed=False,
                 message="expect must be an object",
             )
-        expect_map = cast(dict[str, object], expect)
+        expect_map = cast("dict[str, object]", expect)
 
         agent = await self._agent_repo.get_by_id(agent_id)
         if agent is None:

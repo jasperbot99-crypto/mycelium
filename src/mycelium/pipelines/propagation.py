@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from mycelium.domain.types import ActiveContext, Fact, Priority, PropagationEvent, Urgency
 from mycelium.ops.logger import NullOpsLogger, OpsLogger, ms_since
-from mycelium.storage.protocols import AgentRepository, EventLog, SubscriptionRepository
-from mycelium.transport.protocols import Transport
+
+if TYPE_CHECKING:
+    from mycelium.storage.protocols import AgentRepository, EventLog, SubscriptionRepository
+    from mycelium.transport.protocols import Transport
 
 logger = logging.getLogger(__name__)
 

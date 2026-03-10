@@ -6,11 +6,11 @@ multi-process writers. Vectors are stored in fact metadata.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import cast
 
 
-class CausalOrder(str, Enum):
+class CausalOrder(StrEnum):
     """Relative ordering between two version vectors."""
 
     BEFORE = "before"
@@ -27,7 +27,7 @@ def normalize_vector(raw: object) -> VersionVector:
     if not isinstance(raw, dict):
         return {}
 
-    raw_dict = cast(dict[object, object], raw)
+    raw_dict = cast("dict[object, object]", raw)
     normalized: VersionVector = {}
     for key, value in raw_dict.items():
         if not isinstance(key, str):

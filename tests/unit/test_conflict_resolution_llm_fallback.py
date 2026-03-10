@@ -9,8 +9,7 @@ import pytest
 
 from mycelium.config import MyceliumConfig
 from mycelium.domain.types import Conflict, ConflictStatus, Fact, FactContent, SourceType
-from mycelium.pipelines.conflict_resolution import ConflictResolutionPipeline
-from mycelium.pipelines.conflict_resolution import LLMResolutionDecision
+from mycelium.pipelines.conflict_resolution import ConflictResolutionPipeline, LLMResolutionDecision
 from mycelium.storage.memory import (
     InMemoryConflictRepository,
     InMemoryFactRepository,

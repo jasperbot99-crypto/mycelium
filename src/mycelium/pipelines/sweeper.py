@@ -10,8 +10,10 @@ and uses the same ConflictDetector logic as the pre-commit check.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from mycelium.domain.conflict import DetectionResult, detect_conflicts
@@ -21,11 +23,13 @@ from mycelium.domain.types import (
     FactRelation,
     RelationType,
 )
-from mycelium.storage.protocols import (
-    ConflictRepository,
-    FactRepository,
-    RelationRepository,
-)
+
+if TYPE_CHECKING:
+    from mycelium.storage.protocols import (
+        ConflictRepository,
+        FactRepository,
+        RelationRepository,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -174,8 +178,10 @@ class ContradictionSweeper:
                     already_related = any(
                         r.relation_type == RelationType.CORROBORATES
                         and (
-                            (r.source_fact_id == new_fact.id and r.target_fact_id == cr.existing_fact.id)
-                            or (r.source_fact_id == cr.existing_fact.id and r.target_fact_id == new_fact.id)
+                            (r.source_fact_id == new_fact.id
+                             and r.target_fact_id == cr.existing_fact.id)
+                            or (r.source_fact_id == cr.existing_fact.id
+                                and r.target_fact_id == new_fact.id)
                         )
                         for r in existing_relations
                     )
@@ -219,10 +225,8 @@ class ContradictionSweeper:
         self._running = False
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
 
     async def _run_loop(self) -> None:

@@ -2,7 +2,8 @@
 
 The most critical path. Every fact enters the system through this pipeline.
 
-Flow: validate → hallucination check → resolve predicate → embed → contradiction check → score → store → propagate
+Flow: validate → hallucination check → resolve predicate → embed
+→ contradiction check → score → store → propagate
 """
 
 from __future__ import annotations
@@ -12,9 +13,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from mycelium.config import MyceliumConfig
-from mycelium.domain.consistency import merge_vectors, next_vector, normalize_vector
 from mycelium.domain.conflict import ConflictCandidate, DetectionResult, detect_conflicts
+from mycelium.domain.consistency import merge_vectors, next_vector, normalize_vector
 from mycelium.domain.predicates import resolve_predicate
 from mycelium.domain.trust import compute_initial_confidence, compute_trust_score
 from mycelium.domain.types import (
@@ -27,21 +27,22 @@ from mycelium.domain.types import (
     RelationType,
     SourceType,
 )
-from mycelium.embeddings.protocols import EmbeddingProvider
 from mycelium.ops.logger import NullOpsLogger, OpsLogger, ms_since
 from mycelium.pipelines.hallucination import (
     HallucinationConfig,
     check_hallucination,
 )
-from mycelium.storage.protocols import (
-    AgentRepository,
-    ConflictRepository,
-    FactRepository,
-    RelationRepository,
-)
 
 if TYPE_CHECKING:
+    from mycelium.config import MyceliumConfig
+    from mycelium.embeddings.protocols import EmbeddingProvider
     from mycelium.pipelines.propagation import PropagationEngine
+    from mycelium.storage.protocols import (
+        AgentRepository,
+        ConflictRepository,
+        FactRepository,
+        RelationRepository,
+    )
 
 
 class IngestResult:

@@ -4,7 +4,6 @@ from collections.abc import Iterator, Mapping
 from types import TracebackType
 from typing import Any
 
-
 class Record(Mapping[str, Any]):
     def __getitem__(self, key: str) -> Any: ...
     def __iter__(self) -> Iterator[str]: ...

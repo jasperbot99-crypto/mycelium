@@ -6,21 +6,23 @@ No SQL leaks above this boundary. Repository methods return domain objects.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Protocol, runtime_checkable
-from uuid import UUID
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from mycelium.domain.types import (
-    AgentRecord,
-    Conflict,
-    ConflictStatus,
-    Fact,
-    FactRelation,
-    PropagationEvent,
-    RelationType,
-    Subscription,
-    VerificationStatus,
-)
+if TYPE_CHECKING:
+    from datetime import datetime
+    from uuid import UUID
+
+    from mycelium.domain.types import (
+        AgentRecord,
+        Conflict,
+        ConflictStatus,
+        Fact,
+        FactRelation,
+        PropagationEvent,
+        RelationType,
+        Subscription,
+        VerificationStatus,
+    )
 
 
 @runtime_checkable

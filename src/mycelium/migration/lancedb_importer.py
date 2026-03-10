@@ -9,10 +9,10 @@ Facts start at confidence 0.7 (reduced, not yet verified).
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from mycelium.client.client import MyceliumClient
 from mycelium.domain.types import FactContent, SourceType
 from mycelium.migration.base import (
     MIGRATION_CONFIDENCE,
@@ -20,12 +20,15 @@ from mycelium.migration.base import (
     MigrationResult,
     MigrationSource,
 )
-from mycelium.ops.logger import OpsLogger
+
+if TYPE_CHECKING:
+    from mycelium.client.client import MyceliumClient
+    from mycelium.ops.logger import OpsLogger
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
-        return cast(dict[str, Any], value)
+        return cast("dict[str, Any]", value)
     return {}
 
 
@@ -51,7 +54,7 @@ def _as_tags(value: Any) -> list[str]:
         return []
     if isinstance(value, list):
         parsed: list[str] = []
-        for raw_tag in cast(list[object], value):
+        for raw_tag in cast("list[object]", value):
             rendered = str(raw_tag).strip()
             if rendered:
                 parsed.append(rendered)
@@ -107,10 +110,8 @@ def extract_from_lancedb(
 
         created_at = None
         if "created_at" in row:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 created_at = datetime.fromisoformat(str(row["created_at"]))
-            except (ValueError, TypeError):
-                pass
 
         record = MigrationRecord(
             subject=subject,

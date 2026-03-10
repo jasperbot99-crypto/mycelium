@@ -7,19 +7,22 @@ no SQL. Used for unit tests and as a stepping stone before Postgres.
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
+from typing import TYPE_CHECKING
 
-from mycelium.domain.types import (
-    AgentRecord,
-    Conflict,
-    ConflictStatus,
-    Fact,
-    FactRelation,
-    PropagationEvent,
-    RelationType,
-    Subscription,
-    VerificationStatus,
-)
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from mycelium.domain.types import (
+        AgentRecord,
+        Conflict,
+        ConflictStatus,
+        Fact,
+        FactRelation,
+        PropagationEvent,
+        RelationType,
+        Subscription,
+        VerificationStatus,
+    )
 
 
 class InMemoryFactRepository:

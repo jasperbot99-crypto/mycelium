@@ -8,12 +8,15 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from mycelium.config import MyceliumConfig
-from mycelium.domain.types import Fact, SourceType
-from mycelium.embeddings.protocols import EmbeddingProvider
 from mycelium.ops.logger import NullOpsLogger, OpsLogger, ms_since
-from mycelium.storage.protocols import FactRepository
+
+if TYPE_CHECKING:
+    from mycelium.config import MyceliumConfig
+    from mycelium.domain.types import Fact, SourceType
+    from mycelium.embeddings.protocols import EmbeddingProvider
+    from mycelium.storage.protocols import FactRepository
 
 
 @dataclass(frozen=True)
@@ -173,9 +176,7 @@ class QueryEngine:
             return False
         if filters.source_types and fact.source_type not in filters.source_types:
             return False
-        if not filters.include_conflicted and fact.is_conflicted:
-            return False
-        return True
+        return filters.include_conflicted or not fact.is_conflicted
 
     def _compute_score(
         self, fact: Fact, similarity: float, now: datetime

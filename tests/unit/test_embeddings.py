@@ -11,15 +11,16 @@ from mycelium.embeddings.cache import CachedEmbeddingProvider
 from mycelium.embeddings.mock import MockEmbeddingProvider
 from mycelium.embeddings.openai import EmbeddingAPIError, OpenAIEmbeddingProvider
 
-
 # --- OpenAIEmbeddingProvider ---
 
 
 class TestOpenAIEmbeddingProvider:
     def test_requires_api_key(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(ValueError, match="API key required"):
-                OpenAIEmbeddingProvider(api_key=None)
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(ValueError, match="API key required"),
+        ):
+            OpenAIEmbeddingProvider(api_key=None)
 
     def test_accepts_explicit_api_key(self) -> None:
         provider = OpenAIEmbeddingProvider(api_key="sk-test-key")

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from mycelium.domain.types import VerificationMethod, VerificationResult, VerificationStatus
 from mycelium.ops.logger import NullOpsLogger, OpsLogger
-from mycelium.storage.protocols import AgentRepository, FactRepository
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from mycelium.storage.protocols import AgentRepository, FactRepository
 
 _FACT_DELTAS: dict[VerificationStatus, tuple[float, float]] = {
     VerificationStatus.VERIFIED: (0.1, 0.05),

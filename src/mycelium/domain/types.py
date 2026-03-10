@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-from uuid import UUID
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 def _uuid_list() -> list[UUID]:
@@ -23,7 +26,7 @@ def _object_dict() -> dict[str, object]:
 # --- Enums ---
 
 
-class SourceType(str, Enum):
+class SourceType(StrEnum):
     """How a fact was produced — determines base trust weight.
 
     Hierarchy (spec section 3.4):
@@ -47,7 +50,7 @@ class SourceType(str, Enum):
         return weights[self]
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     """Subscription/propagation priority levels."""
 
     LOW = "low"
@@ -56,7 +59,7 @@ class Priority(str, Enum):
     CRITICAL = "critical"
 
 
-class Urgency(str, Enum):
+class Urgency(StrEnum):
     """Agent active context urgency levels."""
 
     NORMAL = "normal"
@@ -64,7 +67,7 @@ class Urgency(str, Enum):
     CRITICAL = "critical"
 
 
-class ConflictStatus(str, Enum):
+class ConflictStatus(StrEnum):
     """Lifecycle states for a conflict between two facts."""
 
     DETECTED = "detected"
@@ -74,7 +77,7 @@ class ConflictStatus(str, Enum):
     ESCALATED = "escalated"
 
 
-class RelationType(str, Enum):
+class RelationType(StrEnum):
     """Fixed relation types between facts — spec section 6.1.1a."""
 
     CONTRADICTS = "contradicts"
@@ -84,7 +87,7 @@ class RelationType(str, Enum):
     DEPENDS_ON = "depends_on"
 
 
-class VerificationStatus(str, Enum):
+class VerificationStatus(StrEnum):
     """Result of fact verification against ground truth."""
 
     UNVERIFIED = "unverified"
@@ -93,7 +96,7 @@ class VerificationStatus(str, Enum):
     STALE = "stale"
 
 
-class VerificationMethod(str, Enum):
+class VerificationMethod(StrEnum):
     """Verification strategy used for a fact check."""
 
     SYSTEM_PROBE = "system_probe"
@@ -319,9 +322,7 @@ class Subscription:
         """Check if a fact passes this subscription's filters."""
         if fact.confidence < self.min_confidence:
             return False
-        if self.source_types is not None and fact.source_type not in self.source_types:
-            return False
-        return True
+        return not (self.source_types is not None and fact.source_type not in self.source_types)
 
 
 @dataclass

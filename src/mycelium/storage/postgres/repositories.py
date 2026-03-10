@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, cast
-from uuid import UUID
-
-import asyncpg
+from typing import TYPE_CHECKING, Any, cast
 
 from mycelium.domain.types import (
     ActiveContext,
@@ -29,6 +26,11 @@ from mycelium.domain.types import (
     Urgency,
     VerificationStatus,
 )
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    import asyncpg
 
 
 def _row_to_fact(row: asyncpg.Record) -> Fact:
@@ -72,12 +74,12 @@ def _pgvector_to_list(vec: Any) -> list[float]:
     """Convert pgvector string representation to list of floats."""
     if isinstance(vec, list):
         values: list[float] = []
-        for raw in cast(list[float | int | str], vec):
+        for raw in cast("list[float | int | str]", vec):
             values.append(float(raw))
         return values
     if isinstance(vec, tuple):
         values: list[float] = []
-        for raw in cast(tuple[float | int | str, ...], vec):
+        for raw in cast("tuple[float | int | str, ...]", vec):
             values.append(float(raw))
         return values
     if isinstance(vec, str):
@@ -440,26 +442,25 @@ class PostgresSubscriptionRepository:
         agent_id: str,
         subscriptions: list[Subscription],
     ) -> list[Subscription]:
-        async with self._pool.acquire() as conn:
-            async with conn.transaction():
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "DELETE FROM mycelium.subscriptions WHERE agent_id = $1",
+                agent_id,
+            )
+            for sub in subscriptions:
                 await conn.execute(
-                    "DELETE FROM mycelium.subscriptions WHERE agent_id = $1",
-                    agent_id,
-                )
-                for sub in subscriptions:
-                    await conn.execute(
-                        """
+                    """
                         INSERT INTO mycelium.subscriptions
                             (id, agent_id, topic, priority, min_confidence, source_types)
                         VALUES ($1, $2, $3, $4, $5, $6)
                         """,
-                        sub.id,
-                        sub.agent_id,
-                        sub.topic,
-                        sub.priority.value,
-                        sub.min_confidence,
-                        [st.value for st in sub.source_types] if sub.source_types else None,
-                    )
+                    sub.id,
+                    sub.agent_id,
+                    sub.topic,
+                    sub.priority.value,
+                    sub.min_confidence,
+                    [st.value for st in sub.source_types] if sub.source_types else None,
+                )
         return subscriptions
 
     async def get_for_agent(self, agent_id: str) -> list[Subscription]:

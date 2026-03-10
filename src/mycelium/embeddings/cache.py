@@ -7,8 +7,10 @@ Avoids redundant API calls for repeated text.
 from __future__ import annotations
 
 from collections import OrderedDict
+from typing import TYPE_CHECKING
 
-from mycelium.embeddings.protocols import EmbeddingProvider
+if TYPE_CHECKING:
+    from mycelium.embeddings.protocols import EmbeddingProvider
 
 
 class CachedEmbeddingProvider:
@@ -80,7 +82,7 @@ class CachedEmbeddingProvider:
 
         if uncached_texts:
             new_embeddings = await self._inner.embed_batch(uncached_texts)
-            for idx, embedding in zip(uncached_indices, new_embeddings):
+            for idx, embedding in zip(uncached_indices, new_embeddings, strict=False):
                 results[idx] = embedding
                 self._put(texts[idx], embedding)
 

@@ -67,20 +67,30 @@ class ConfidenceThresholdProvider:
             return VerificationOutcome(
                 status=VerificationStatus.FAILED,
                 method=self.method,
-                reason=f"Below thresholds: confidence={fact.confidence:.2f} (min {self._min_confidence}), trust={fact.trust_score:.2f} (min {self._min_trust})",
+                reason=(
+                    f"Below thresholds: confidence={fact.confidence:.2f}"
+                    f" (min {self._min_confidence}),"
+                    f" trust={fact.trust_score:.2f} (min {self._min_trust})"
+                ),
             )
 
         if fact.confidence < self._stale_threshold:
             return VerificationOutcome(
                 status=VerificationStatus.STALE,
                 method=self.method,
-                reason=f"Below stale threshold: confidence={fact.confidence:.2f} (threshold {self._stale_threshold})",
+                reason=(
+                    f"Below stale threshold: confidence={fact.confidence:.2f}"
+                    f" (threshold {self._stale_threshold})"
+                ),
             )
 
         return VerificationOutcome(
             status=VerificationStatus.VERIFIED,
             method=self.method,
-            reason=f"Passed thresholds: confidence={fact.confidence:.2f}, trust={fact.trust_score:.2f}",
+            reason=(
+                f"Passed thresholds: confidence={fact.confidence:.2f},"
+                f" trust={fact.trust_score:.2f}"
+            ),
         )
 
 

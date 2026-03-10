@@ -12,8 +12,10 @@ Order:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from mycelium.migration.base import MigrationResult
+if TYPE_CHECKING:
+    from mycelium.migration.base import MigrationResult
 
 
 def _result_list() -> list[MigrationResult]:

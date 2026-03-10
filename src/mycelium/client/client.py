@@ -6,10 +6,10 @@ Thin facade: validates input, delegates to pipelines, returns results.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Awaitable, Callable
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from mycelium.config import MyceliumConfig
+from mycelium.domain.trust import compute_trust_score
 from mycelium.domain.types import (
     ActiveContext,
     AgentRecord,
@@ -27,8 +27,6 @@ from mycelium.domain.types import (
     VerificationResult,
     VerificationStatus,
 )
-from mycelium.domain.trust import compute_trust_score
-from mycelium.embeddings.protocols import EmbeddingProvider
 from mycelium.llm import build_conflict_resolver
 from mycelium.ops.logger import NullOpsLogger, OpsLogger
 from mycelium.pipelines.conflict_resolution import (
@@ -40,15 +38,21 @@ from mycelium.pipelines.propagation import PropagationEngine
 from mycelium.pipelines.provenance import ProvenanceEntry, ProvenancePipeline
 from mycelium.pipelines.query import QueryEngine, QueryFilters, QueryResult
 from mycelium.pipelines.verification import VerificationPipeline
-from mycelium.storage.protocols import (
-    AgentRepository,
-    ConflictRepository,
-    EventLog,
-    FactRepository,
-    RelationRepository,
-    SubscriptionRepository,
-)
-from mycelium.transport.protocols import Transport
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from mycelium.config import MyceliumConfig
+    from mycelium.embeddings.protocols import EmbeddingProvider
+    from mycelium.storage.protocols import (
+        AgentRepository,
+        ConflictRepository,
+        EventLog,
+        FactRepository,
+        RelationRepository,
+        SubscriptionRepository,
+    )
+    from mycelium.transport.protocols import Transport
 
 
 class MyceliumClient:

@@ -10,7 +10,6 @@ from typing import Protocol
 
 import httpx
 
-
 _OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 _DEFAULT_MODEL = "text-embedding-3-small"
 _DEFAULT_DIMENSION = 1536

@@ -216,7 +216,9 @@ class TestInMemoryAgentRepository:
     @pytest.mark.asyncio
     async def test_update_trust_stats(self, repo: InMemoryAgentRepository) -> None:
         await repo.upsert(AgentRecord(id="agent-1", role="trader"))
-        await repo.update_trust_stats("agent-1", facts_contributed_delta=5, facts_contradicted_delta=1)
+        await repo.update_trust_stats(
+            "agent-1", facts_contributed_delta=5, facts_contradicted_delta=1
+        )
 
         agent = await repo.get_by_id("agent-1")
         assert agent is not None
@@ -269,15 +271,24 @@ class TestInMemoryConflictRepository:
 
     @pytest.mark.asyncio
     async def test_find_by_status(self, repo: InMemoryConflictRepository) -> None:
-        await repo.insert(Conflict(id=uuid4(), fact_a_id=uuid4(), fact_b_id=uuid4(), status=ConflictStatus.DETECTED))
-        await repo.insert(Conflict(id=uuid4(), fact_a_id=uuid4(), fact_b_id=uuid4(), status=ConflictStatus.AUTO_RESOLVED))
+        await repo.insert(Conflict(
+            id=uuid4(), fact_a_id=uuid4(), fact_b_id=uuid4(),
+            status=ConflictStatus.DETECTED,
+        ))
+        await repo.insert(Conflict(
+            id=uuid4(), fact_a_id=uuid4(), fact_b_id=uuid4(),
+            status=ConflictStatus.AUTO_RESOLVED,
+        ))
 
         detected = await repo.find_by_status(ConflictStatus.DETECTED)
         assert len(detected) == 1
 
     @pytest.mark.asyncio
     async def test_update_resolution(self, repo: InMemoryConflictRepository) -> None:
-        conflict = Conflict(id=uuid4(), fact_a_id=uuid4(), fact_b_id=uuid4(), status=ConflictStatus.DETECTED)
+        conflict = Conflict(
+            id=uuid4(), fact_a_id=uuid4(), fact_b_id=uuid4(),
+            status=ConflictStatus.DETECTED,
+        )
         await repo.insert(conflict)
 
         winner = uuid4()
@@ -300,8 +311,14 @@ class TestInMemoryEventLog:
 
     @pytest.mark.asyncio
     async def test_append_assigns_sequence(self, log: InMemoryEventLog) -> None:
-        e1 = PropagationEvent(id=uuid4(), fact_id=uuid4(), target_agent_id="a1", reason="test", priority=Priority.NORMAL)
-        e2 = PropagationEvent(id=uuid4(), fact_id=uuid4(), target_agent_id="a1", reason="test", priority=Priority.NORMAL)
+        e1 = PropagationEvent(
+            id=uuid4(), fact_id=uuid4(), target_agent_id="a1",
+            reason="test", priority=Priority.NORMAL,
+        )
+        e2 = PropagationEvent(
+            id=uuid4(), fact_id=uuid4(), target_agent_id="a1",
+            reason="test", priority=Priority.NORMAL,
+        )
 
         stored1 = await log.append(e1)
         stored2 = await log.append(e2)
@@ -312,14 +329,20 @@ class TestInMemoryEventLog:
     @pytest.mark.asyncio
     async def test_get_since(self, log: InMemoryEventLog) -> None:
         for _ in range(5):
-            await log.append(PropagationEvent(id=uuid4(), fact_id=uuid4(), target_agent_id="a1", reason="test", priority=Priority.NORMAL))
+            await log.append(PropagationEvent(
+                id=uuid4(), fact_id=uuid4(), target_agent_id="a1",
+                reason="test", priority=Priority.NORMAL,
+            ))
 
         results = await log.get_since("a1", since_sequence=3)
         assert len(results) == 2
 
     @pytest.mark.asyncio
     async def test_mark_delivered(self, log: InMemoryEventLog) -> None:
-        event = PropagationEvent(id=uuid4(), fact_id=uuid4(), target_agent_id="a1", reason="test", priority=Priority.NORMAL)
+        event = PropagationEvent(
+            id=uuid4(), fact_id=uuid4(), target_agent_id="a1",
+            reason="test", priority=Priority.NORMAL,
+        )
         await log.append(event)
 
         await log.mark_delivered(event.id)
@@ -328,8 +351,14 @@ class TestInMemoryEventLog:
 
     @pytest.mark.asyncio
     async def test_get_undelivered(self, log: InMemoryEventLog) -> None:
-        await log.append(PropagationEvent(id=uuid4(), fact_id=uuid4(), target_agent_id="a1", reason="test", priority=Priority.NORMAL))
-        await log.append(PropagationEvent(id=uuid4(), fact_id=uuid4(), target_agent_id="a2", reason="test", priority=Priority.NORMAL))
+        await log.append(PropagationEvent(
+            id=uuid4(), fact_id=uuid4(), target_agent_id="a1",
+            reason="test", priority=Priority.NORMAL,
+        ))
+        await log.append(PropagationEvent(
+            id=uuid4(), fact_id=uuid4(), target_agent_id="a2",
+            reason="test", priority=Priority.NORMAL,
+        ))
 
         undelivered = await log.get_undelivered("a1")
         assert len(undelivered) == 1
@@ -360,8 +389,14 @@ class TestInMemoryRelationRepository:
     @pytest.mark.asyncio
     async def test_filter_by_type(self, repo: InMemoryRelationRepository) -> None:
         fact_id = uuid4()
-        await repo.insert(FactRelation(id=uuid4(), source_fact_id=fact_id, target_fact_id=uuid4(), relation_type=RelationType.SUPERSEDES))
-        await repo.insert(FactRelation(id=uuid4(), source_fact_id=fact_id, target_fact_id=uuid4(), relation_type=RelationType.CORROBORATES))
+        await repo.insert(FactRelation(
+            id=uuid4(), source_fact_id=fact_id,
+            target_fact_id=uuid4(), relation_type=RelationType.SUPERSEDES,
+        ))
+        await repo.insert(FactRelation(
+            id=uuid4(), source_fact_id=fact_id,
+            target_fact_id=uuid4(), relation_type=RelationType.CORROBORATES,
+        ))
 
         supersedes = await repo.find_for_fact(fact_id, relation_type=RelationType.SUPERSEDES)
         assert len(supersedes) == 1
@@ -401,8 +436,14 @@ class TestInMemorySubscriptionRepository:
 
     @pytest.mark.asyncio
     async def test_get_all(self, repo: InMemorySubscriptionRepository) -> None:
-        await repo.sync_subscriptions("a1", [Subscription(id=uuid4(), agent_id="a1", topic="t1", priority=Priority.NORMAL)])
-        await repo.sync_subscriptions("a2", [Subscription(id=uuid4(), agent_id="a2", topic="t2", priority=Priority.NORMAL)])
+        await repo.sync_subscriptions("a1", [Subscription(
+            id=uuid4(), agent_id="a1", topic="t1",
+            priority=Priority.NORMAL,
+        )])
+        await repo.sync_subscriptions("a2", [Subscription(
+            id=uuid4(), agent_id="a2", topic="t2",
+            priority=Priority.NORMAL,
+        )])
 
         all_subs = await repo.get_all()
         assert len(all_subs) == 2

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from mycelium.domain.types import Fact
+if TYPE_CHECKING:
+    from mycelium.domain.types import Fact
 
 
-class DetectionResult(str, Enum):
+class DetectionResult(StrEnum):
     """Outcome of comparing two facts."""
 
     CONTRADICTION = "contradiction"
@@ -39,7 +41,7 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     if len(a) != len(b):
         raise ValueError(f"Vector dimension mismatch: {len(a)} vs {len(b)}")
 
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
 
@@ -158,33 +160,33 @@ def _analyze_contradiction(
     if (
         new_fact.predicate_canonical is not None
         and candidate.predicate_canonical is not None
+        and new_fact.predicate_canonical == candidate.predicate_canonical
     ):
-        if new_fact.predicate_canonical == candidate.predicate_canonical:
-            # Same canonical predicate + different object = contradiction
-            if (
-                new_fact.content.object.strip().lower()
-                != candidate.content.object.strip().lower()
-            ):
-                return ConflictCandidate(
-                    existing_fact=candidate,
-                    result=DetectionResult.CONTRADICTION,
-                    similarity=similarity,
-                    reason=(
-                        f"Same canonical predicate '{new_fact.predicate_canonical}' "
-                        f"with different object: "
-                        f"'{new_fact.content.object}' vs '{candidate.content.object}'"
-                    ),
-                )
-            else:
-                return ConflictCandidate(
-                    existing_fact=candidate,
-                    result=DetectionResult.CORROBORATION,
-                    similarity=similarity,
-                    reason=(
-                        f"Same canonical predicate '{new_fact.predicate_canonical}' "
-                        f"with same object value"
-                    ),
-                )
+        # Same canonical predicate + different object = contradiction
+        if (
+            new_fact.content.object.strip().lower()
+            != candidate.content.object.strip().lower()
+        ):
+            return ConflictCandidate(
+                existing_fact=candidate,
+                result=DetectionResult.CONTRADICTION,
+                similarity=similarity,
+                reason=(
+                    f"Same canonical predicate '{new_fact.predicate_canonical}' "
+                    f"with different object: "
+                    f"'{new_fact.content.object}' vs '{candidate.content.object}'"
+                ),
+            )
+        else:
+            return ConflictCandidate(
+                existing_fact=candidate,
+                result=DetectionResult.CORROBORATION,
+                similarity=similarity,
+                reason=(
+                    f"Same canonical predicate '{new_fact.predicate_canonical}' "
+                    f"with same object value"
+                ),
+            )
 
     # Without canonical predicates: rely on embedding similarity + object comparison
     # Different object values in the middle zone = potential contradiction

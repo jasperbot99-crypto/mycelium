@@ -9,9 +9,8 @@ Requires: asyncpg connection to Supabase Postgres (direct connection, not REST A
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from mycelium.client.client import MyceliumClient
 from mycelium.domain.types import FactContent, SourceType
 from mycelium.migration.base import (
     MIGRATION_CONFIDENCE,
@@ -19,7 +18,10 @@ from mycelium.migration.base import (
     MigrationResult,
     MigrationSource,
 )
-from mycelium.ops.logger import OpsLogger
+
+if TYPE_CHECKING:
+    from mycelium.client.client import MyceliumClient
+    from mycelium.ops.logger import OpsLogger
 
 
 class _RowLike(Protocol):
@@ -53,7 +55,7 @@ def _as_tags(value: object | None) -> list[str]:
         return []
     if isinstance(value, list):
         parsed: list[str] = []
-        for raw_tag in cast(list[object], value):
+        for raw_tag in cast("list[object]", value):
             rendered = str(raw_tag).strip()
             if rendered:
                 parsed.append(rendered)
@@ -87,9 +89,9 @@ async def extract_from_supabase(
 
     records: list[MigrationRecord] = []
     for row in rows:
-        subject = _as_str(cast(Any, row["subject"]), "unknown")
-        predicate = _as_str(cast(Any, row.get("predicate")), "has_learning")
-        obj = _as_str(cast(Any, row["content"]), "")
+        subject = _as_str(cast("Any", row["subject"]), "unknown")
+        predicate = _as_str(cast("Any", row.get("predicate")), "has_learning")
+        obj = _as_str(cast("Any", row["content"]), "")
         if not obj:
             continue
         record = MigrationRecord(
@@ -100,7 +102,7 @@ async def extract_from_supabase(
             tags=_as_tags(row.get("tags")),
             source_agent_id=_as_optional_str(row.get("agent_id")),
             original_id=str(row["id"]),
-            original_created_at=cast(datetime | None, row.get("created_at")),
+            original_created_at=cast("datetime | None", row.get("created_at")),
         )
         records.append(record)
 

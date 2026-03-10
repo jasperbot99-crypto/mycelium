@@ -180,18 +180,18 @@ def _parse_extraction_json(content: str) -> list[ExtractorFact]:
 
     if not isinstance(parsed_obj, dict):
         raise MemoryExtractionError("Extractor JSON root must be an object")
-    parsed = cast(dict[str, object], parsed_obj)
+    parsed = cast("dict[str, object]", parsed_obj)
 
     raw_facts = parsed.get("facts")
     if not isinstance(raw_facts, list):
         raise MemoryExtractionError("Extractor JSON must include a facts list")
 
     facts: list[ExtractorFact] = []
-    raw_fact_items = cast(list[object], raw_facts)
+    raw_fact_items = cast("list[object]", raw_facts)
     for raw_item in raw_fact_items:
         if not isinstance(raw_item, dict):
             continue
-        item = cast(dict[str, object], raw_item)
+        item = cast("dict[str, object]", raw_item)
         subject = _as_non_empty_str(item.get("subject"))
         predicate = _as_non_empty_str(item.get("predicate"))
         obj = _as_non_empty_str(item.get("object"))
@@ -259,7 +259,7 @@ def _as_tags(value: object | None) -> list[str]:
         return []
     if isinstance(value, list):
         tags: list[str] = []
-        raw_values = cast(list[object], value)
+        raw_values = cast("list[object]", value)
         for item in raw_values:
             rendered = _as_non_empty_str(item)
             if rendered is not None:

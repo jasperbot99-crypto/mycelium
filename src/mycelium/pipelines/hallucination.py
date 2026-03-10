@@ -110,7 +110,10 @@ def check_hallucination(
     ):
         flags.append(HallucinationFlag(
             code="inflated_confidence",
-            message=f"agent_inference claiming confidence={claimed_confidence:.2f} (max {cfg.inference_max_confidence})",
+            message=(
+                f"agent_inference claiming confidence={claimed_confidence:.2f}"
+                f" (max {cfg.inference_max_confidence})"
+            ),
             confidence_penalty=0.3,
         ))
 
@@ -123,7 +126,10 @@ def check_hallucination(
     ):
         flags.append(HallucinationFlag(
             code="low_trust_high_confidence",
-            message=f"agent trust={agent.trust_score:.2f} but claiming confidence={claimed_confidence:.2f}",
+            message=(
+                f"agent trust={agent.trust_score:.2f}"
+                f" but claiming confidence={claimed_confidence:.2f}"
+            ),
             confidence_penalty=0.25,
         ))
 

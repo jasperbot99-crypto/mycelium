@@ -1,0 +1,6 @@
+{
+  "ingest_p95_ms": 100.0,
+  "query_p95_ms": 50.0,
+  "propagation_p95_ms": 1000.0,
+  "conflict_resolution_per_s": 10.0
+}

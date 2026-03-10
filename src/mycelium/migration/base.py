@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 
 def _string_list() -> list[str]:
@@ -22,7 +22,7 @@ def _tag_list() -> list[str]:
     return []
 
 
-class MigrationSource(str, Enum):
+class MigrationSource(StrEnum):
     """Source systems for legacy migration."""
 
     SUPABASE = "supabase"

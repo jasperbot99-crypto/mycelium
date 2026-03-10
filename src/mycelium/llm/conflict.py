@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import UUID
 
 import httpx
 
-from mycelium.domain.types import Conflict, Fact
 from mycelium.pipelines.conflict_resolution import (
     ConflictLLMResolver,
     LLMResolutionDecision,
 )
+
+if TYPE_CHECKING:
+    from mycelium.domain.types import Conflict, Fact
 
 _OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 _ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
@@ -87,13 +89,13 @@ class OpenAIConflictResolver(ConflictLLMResolver):
                 f"OpenAI resolver error {response.status_code}: {response.text}"
             )
 
-        data = cast(dict[str, Any], response.json())
+        data = cast("dict[str, Any]", response.json())
         choices = data.get("choices")
         if not isinstance(choices, list) or not choices:
             raise ConflictLLMProviderError("OpenAI response missing choices")
 
-        first = cast(dict[str, Any], choices[0])
-        message = cast(dict[str, Any], first.get("message", {}))
+        first = cast("dict[str, Any]", choices[0])
+        message = cast("dict[str, Any]", first.get("message", {}))
         content = message.get("content")
         if not isinstance(content, str):
             raise ConflictLLMProviderError("OpenAI response missing content")
@@ -168,16 +170,16 @@ class AnthropicConflictResolver(ConflictLLMResolver):
                 f"Anthropic resolver error {response.status_code}: {response.text}"
             )
 
-        data = cast(dict[str, Any], response.json())
+        data = cast("dict[str, Any]", response.json())
         blocks = data.get("content")
         if not isinstance(blocks, list):
             raise ConflictLLMProviderError("Anthropic response missing content blocks")
 
         text_chunks: list[str] = []
-        for block in cast(list[object], blocks):
+        for block in cast("list[object]", blocks):
             if not isinstance(block, dict):
                 continue
-            typed_block = cast(dict[str, object], block)
+            typed_block = cast("dict[str, object]", block)
             if typed_block.get("type") != "text":
                 continue
             text = typed_block.get("text")
@@ -264,7 +266,7 @@ def _parse_decision_json(
             cleaned = cleaned[4:].strip()
 
     try:
-        parsed = cast(dict[str, object], json.loads(cleaned))
+        parsed = cast("dict[str, object]", json.loads(cleaned))
     except json.JSONDecodeError as exc:
         raise ConflictLLMProviderError(f"Invalid LLM decision JSON: {exc}") from exc
 

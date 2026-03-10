@@ -233,7 +233,8 @@ class TestIngestPipeline:
         embedding: MockEmbeddingProvider,
         registered_agent: AgentRecord,
     ) -> None:
-        """Two facts with same subject and canonical predicate but different objects should conflict."""
+        """Two facts with same subject and canonical predicate but different
+        objects should conflict."""
         # Pre-seed a fact with known embedding
         content1 = FactContent(subject="api-orders", predicate="has_status", object="healthy")
         embedding_vec = await embedding.embed(content1.to_embedding_text())

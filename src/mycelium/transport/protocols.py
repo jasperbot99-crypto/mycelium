@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from mycelium.domain.types import PropagationEvent
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from mycelium.domain.types import PropagationEvent
 
 
 @runtime_checkable

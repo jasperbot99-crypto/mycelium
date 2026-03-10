@@ -11,10 +11,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID, uuid4
 
-from mycelium.config import MyceliumConfig
 from mycelium.domain.consistency import (
     CausalOrder,
     compare_vectors,
@@ -29,11 +28,14 @@ from mycelium.domain.types import (
     RelationType,
 )
 from mycelium.ops.logger import NullOpsLogger, OpsLogger, ms_since
-from mycelium.storage.protocols import (
-    ConflictRepository,
-    FactRepository,
-    RelationRepository,
-)
+
+if TYPE_CHECKING:
+    from mycelium.config import MyceliumConfig
+    from mycelium.storage.protocols import (
+        ConflictRepository,
+        FactRepository,
+        RelationRepository,
+    )
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,9 @@ class LLMResolutionDecision:
 class ConflictLLMResolver(Protocol):
     """Protocol for LLM-assisted conflict resolution."""
 
-    async def resolve(self, conflict: Conflict, fact_a: Fact, fact_b: Fact) -> LLMResolutionDecision:
+    async def resolve(
+        self, conflict: Conflict, fact_a: Fact, fact_b: Fact,
+    ) -> LLMResolutionDecision:
         """Resolve an ambiguous conflict and return a decision."""
         ...
 

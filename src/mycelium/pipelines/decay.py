@@ -11,14 +11,18 @@ Follows the same start/stop lifecycle pattern as ContradictionSweeper.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from mycelium.domain.types import Fact, VerificationStatus
 from mycelium.ops.logger import NullOpsLogger, OpsLogger
-from mycelium.storage.protocols import FactRepository
+
+if TYPE_CHECKING:
+    from mycelium.storage.protocols import FactRepository
 
 logger = logging.getLogger(__name__)
 
@@ -164,10 +168,8 @@ class DecayCycleRunner:
         self._running = False
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
 
     async def _run_loop(self) -> None:

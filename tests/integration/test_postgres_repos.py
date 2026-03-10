@@ -7,6 +7,7 @@ Run: pytest tests/integration/ -v
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
@@ -25,14 +26,16 @@ from mycelium.domain.types import (
     Subscription,
     VerificationStatus,
 )
-from mycelium.storage.postgres.repositories import (
-    PostgresAgentRepository,
-    PostgresConflictRepository,
-    PostgresEventLog,
-    PostgresFactRepository,
-    PostgresRelationRepository,
-    PostgresSubscriptionRepository,
-)
+
+if TYPE_CHECKING:
+    from mycelium.storage.postgres.repositories import (
+        PostgresAgentRepository,
+        PostgresConflictRepository,
+        PostgresEventLog,
+        PostgresFactRepository,
+        PostgresRelationRepository,
+        PostgresSubscriptionRepository,
+    )
 
 
 def _make_agent(agent_id: str = "test-agent", role: str = "tester") -> AgentRecord:
@@ -235,7 +238,9 @@ class TestPostgresAgentRepository:
         self, agent_repo: PostgresAgentRepository, clean_db: None
     ) -> None:
         await agent_repo.upsert(_make_agent())
-        await agent_repo.update_trust_stats("test-agent", facts_contributed_delta=10, facts_contradicted_delta=2)
+        await agent_repo.update_trust_stats(
+            "test-agent", facts_contributed_delta=10, facts_contradicted_delta=2,
+        )
 
         agent = await agent_repo.get_by_id("test-agent")
         assert agent is not None
@@ -423,8 +428,14 @@ class TestPostgresSubscriptionRepository:
     ) -> None:
         await agent_repo.upsert(_make_agent())
         subs = [
-            Subscription(id=uuid4(), agent_id="test-agent", topic="api.*", priority=Priority.HIGH),
-            Subscription(id=uuid4(), agent_id="test-agent", topic="infra", priority=Priority.NORMAL),
+            Subscription(
+                id=uuid4(), agent_id="test-agent",
+                topic="api.*", priority=Priority.HIGH,
+            ),
+            Subscription(
+                id=uuid4(), agent_id="test-agent",
+                topic="infra", priority=Priority.NORMAL,
+            ),
         ]
         await subscription_repo.sync_subscriptions("test-agent", subs)
 

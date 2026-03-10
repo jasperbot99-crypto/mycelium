@@ -60,5 +60,13 @@ class MyceliumConfig:
     ops_log_enabled: bool = True
     ops_log_schema: str = "ops"
 
+    # Server mode (Phase 5)
+    server_host: str = "127.0.0.1"
+    server_port: int = 8080
+    server_api_key: str | None = None
+    server_request_timeout_s: float = 30.0
+    server_cors_allow_origins: list[str] = field(default_factory=list)
+    benchmark_enabled: bool = False
+
     # Agent (set per client instance)
     subscriptions: list[SubscriptionConfig] = field(default_factory=_default_subscriptions)

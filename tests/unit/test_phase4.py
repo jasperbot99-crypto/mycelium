@@ -310,7 +310,7 @@ async def test_ingest_assigns_version_vector_metadata() -> None:
 
     assert isinstance(vec_first, dict)
     assert isinstance(vec_second, dict)
-    vec_first_typed = cast(dict[str, int], vec_first)
-    vec_second_typed = cast(dict[str, int], vec_second)
+    vec_first_typed = cast("dict[str, int]", vec_first)
+    vec_second_typed = cast("dict[str, int]", vec_second)
     assert vec_first_typed.get("agent-a") == 1
     assert vec_second_typed.get("agent-a") == 2

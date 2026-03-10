@@ -12,6 +12,9 @@ license = "MIT"
 dependencies = [
     "asyncpg>=0.30.0",
     "httpx>=0.28.0",
+    "fastapi>=0.116.0",
+    "uvicorn>=0.35.0",
+    "pydantic>=2.11.0",
 ]
 
 [project.optional-dependencies]
@@ -25,6 +28,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mycelium"]
+
+[project.scripts]
+mycelium-server = "mycelium.server.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

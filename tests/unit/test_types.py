@@ -73,8 +73,14 @@ class TestFactContent:
 
 class TestSourceType:
     def test_trust_weights_ordered(self) -> None:
-        assert SourceType.HUMAN_CORRECTION.trust_weight > SourceType.SYSTEM_VERIFICATION.trust_weight
-        assert SourceType.SYSTEM_VERIFICATION.trust_weight > SourceType.AGENT_EXTRACTION.trust_weight
+        assert (
+            SourceType.HUMAN_CORRECTION.trust_weight
+            > SourceType.SYSTEM_VERIFICATION.trust_weight
+        )
+        assert (
+            SourceType.SYSTEM_VERIFICATION.trust_weight
+            > SourceType.AGENT_EXTRACTION.trust_weight
+        )
         assert SourceType.AGENT_EXTRACTION.trust_weight > SourceType.AGENT_INFERENCE.trust_weight
 
     def test_human_correction_is_max(self) -> None:
@@ -221,6 +227,9 @@ class TestSubscription:
 
 class TestRejectionReason:
     def test_creation(self) -> None:
-        r = RejectionReason(code="duplicate", message="Fact already exists", existing_fact_id=uuid4())
+        r = RejectionReason(
+            code="duplicate", message="Fact already exists",
+            existing_fact_id=uuid4(),
+        )
         assert r.code == "duplicate"
         assert r.existing_fact_id is not None
