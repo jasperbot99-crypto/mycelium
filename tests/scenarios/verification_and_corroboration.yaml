@@ -1,0 +1,72 @@
+scenario: "verification and corroboration across agents"
+
+agents:
+  - id: agent-source
+    role: code
+    subscriptions:
+      - topic: "api.*"
+  - id: agent-verifier
+    role: verifier
+    subscriptions:
+      - topic: "api.*"
+
+steps:
+  # Source agent contributes a fact.
+  - action: ingest
+    agent: agent-source
+    save_as: source_fact
+    fact:
+      subject: "api-orders"
+      predicate: "has_status"
+      object: "healthy"
+    tags: [api.orders]
+
+  # Verifier agent contributes a separate supporting fact.
+  - action: ingest
+    agent: agent-verifier
+    save_as: verifier_fact
+    fact:
+      subject: "api-orders"
+      predicate: "reports_health"
+      object: "healthy"
+    tags: [api.orders]
+
+  # Explicit cross-agent corroboration of source fact.
+  - action: corroborate
+    agent: agent-verifier
+    fact_ref: source_fact
+    corroborating_fact_ref: verifier_fact
+    reason: "independent verification signal"
+
+  # Corroboration marks source fact verified and increments corroboration count.
+  - action: assert_fact
+    fact_ref: source_fact
+    expect:
+      verification_status: "verified"
+      min_corroboration_count: 1
+      min_confidence: 0.6
+
+  # Source agent trust is expected to be at least baseline after corroboration flow.
+  - action: assert_agent
+    agent: agent-source
+    expect:
+      min_trust_score: 0.5
+
+  # Later verification fails; this should downgrade fact confidence and source trust.
+  - action: verify
+    agent: agent-verifier
+    fact_ref: source_fact
+    method: "system_probe"
+    status: "failed"
+    reason: "live probe now reports degraded"
+
+  - action: assert_fact
+    fact_ref: source_fact
+    expect:
+      verification_status: "failed"
+      max_confidence: 0.5
+
+  - action: assert_agent
+    agent: agent-source
+    expect:
+      max_trust_score: 0.49

@@ -1,0 +1,45 @@
+scenario: "negative error contracts for verification and corroboration"
+
+agents:
+  - id: agent-source
+    role: code
+    subscriptions:
+      - topic: "api.*"
+  - id: agent-verifier
+    role: verifier
+    subscriptions:
+      - topic: "api.*"
+
+steps:
+  # Seed one valid fact so we can reference it in negative corroboration case.
+  - action: ingest
+    agent: agent-source
+    save_as: seed_fact
+    fact:
+      subject: "api-orders"
+      predicate: "has_status"
+      object: "healthy"
+    tags: [api.orders]
+
+  # 1) Invalid fact_ref should fail at scenario layer.
+  - action: verify
+    agent: agent-verifier
+    fact_ref: does_not_exist
+    method: "manual_review"
+    status: "verified"
+    expect_error: "unknown fact_ref"
+
+  # 2) Verify missing fact_id should fail at client/domain layer.
+  - action: verify
+    agent: agent-verifier
+    fact_id: "00000000-0000-0000-0000-000000000123"
+    method: "system_probe"
+    status: "failed"
+    expect_error: "fact not found"
+
+  # 3) Corroborate with same fact_id should fail validation.
+  - action: corroborate
+    agent: agent-verifier
+    fact_ref: seed_fact
+    corroborating_fact_ref: seed_fact
+    expect_error: "must differ"

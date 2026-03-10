@@ -1,0 +1,83 @@
+scenario: "propagation and subscription matching"
+
+agents:
+  - id: agent-code
+    role: code
+    subscriptions:
+      - topic: "api.*"
+      - topic: "infrastructure"
+  - id: agent-trader
+    role: trader
+    subscriptions:
+      - topic: "api.*"
+  - id: agent-ops
+    role: ops
+    subscriptions:
+      - topic: "infrastructure"
+
+steps:
+  # Step 0: agent-code ingests a fact tagged api.orders
+  # agent-trader subscribes to api.* → should receive it
+  # agent-ops does NOT subscribe to api.* → should NOT receive it
+  - action: ingest
+    agent: agent-code
+    fact:
+      subject: "api-orders"
+      predicate: "has_status"
+      object: "healthy"
+    tags: [api.orders]
+
+  # Step 1: agent-trader should have received the propagation event
+  - action: assert_propagation
+    agent: agent-trader
+    expect:
+      count: 1
+
+  # Step 2: agent-ops should NOT have received it (no api.* subscription)
+  - action: assert_propagation
+    agent: agent-ops
+    expect:
+      count: 0
+
+  # Step 3: agent-code should NOT receive its own fact
+  - action: assert_propagation
+    agent: agent-code
+    expect:
+      count: 0
+
+  # Step 4: agent-trader ingests a fact tagged infrastructure
+  # agent-code subscribes to infrastructure → should receive it
+  # agent-ops subscribes to infrastructure → should receive it
+  - action: ingest
+    agent: agent-trader
+    fact:
+      subject: "postgres-main"
+      predicate: "has_status"
+      object: "healthy"
+    tags: [infrastructure]
+
+  # Step 5: agent-code got the infrastructure event (1 new + 0 previous = 1 total)
+  - action: assert_propagation
+    agent: agent-code
+    expect:
+      count: 1
+
+  # Step 6: agent-ops got the infrastructure event (0 previous + 1 new = 1 total)
+  - action: assert_propagation
+    agent: agent-ops
+    expect:
+      count: 1
+
+  # Step 7: agent-trader should NOT receive its own fact
+  - action: assert_propagation
+    agent: agent-trader
+    expect:
+      count: 1  # still just the 1 from step 0
+
+  # Step 8: Verify everything is still queryable
+  - action: assert_query
+    agent: agent-code
+    query: "api-orders has_status healthy"
+    expect:
+      min_results: 1
+      subject: "api-orders"

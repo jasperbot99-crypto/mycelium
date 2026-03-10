@@ -1,0 +1,70 @@
+scenario: "basic ingest, query, and contradiction detection"
+
+agents:
+  - id: agent-code
+    role: code
+    subscriptions:
+      - topic: "api.*"
+  - id: agent-trader
+    role: trader
+    subscriptions:
+      - topic: "api.*"
+
+steps:
+  # Step 0: Agent-code ingests a fact about API status
+  - action: ingest
+    agent: agent-code
+    fact:
+      subject: "api-orders"
+      predicate: "has_status"
+      object: "healthy"
+    tags: [api, infrastructure]
+
+  # Step 1: Query should find the ingested fact
+  - action: assert_query
+    agent: agent-code
+    query: "api-orders has_status healthy"
+    expect:
+      min_results: 1
+      subject: "api-orders"
+
+  # Step 2: Agent-trader ingests a contradicting fact (same subject+predicate, different object)
+  # Note: with mock embeddings, contradiction detection relies on shared embeddings.
+  # This tests the ingest flow, not semantic similarity.
+  - action: ingest
+    agent: agent-trader
+    fact:
+      subject: "api-orders"
+      predicate: "has_status"
+      object: "degraded"
+    tags: [api, infrastructure]
+
+  # Step 3: Run a sweep to check for contradictions
+  # (With mock embeddings, ingest-time detection won't find contradictions
+  #  because different text = different vectors. The sweep also won't find them
+  #  for the same reason. This validates the sweep mechanics work.)
+  - action: sweep
+
+  # Step 4: Both facts should be queryable
+  - action: assert_query
+    agent: agent-code
+    query: "api-orders"
+    expect:
+      min_results: 1
+
+  # Step 5: Ingest a second fact from a different domain
+  - action: ingest
+    agent: agent-code
+    fact:
+      subject: "database-main"
+      predicate: "has_status"
+      object: "healthy"
+    tags: [infrastructure, database]
+
+  # Step 6: Query should find the database fact
+  - action: assert_query
+    agent: agent-code
+    query: "database-main has_status healthy"
+    expect:
+      min_results: 1
+      subject: "database-main"
