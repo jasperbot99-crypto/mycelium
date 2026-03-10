@@ -1,0 +1,82 @@
+# Incident 1: Equity Hardcoded at $10,000 (Dag 9 — 2026-03-09)
+#
+# Real incident: jasper-trader had equity hardcoded at $10,000 for 3 weeks.
+# Real Capital.com balance was $1,077.64. All position sizing was wrong by ~10x.
+#
+# Mycelium detection: Two agents ingest contradictory equity values.
+# system_verification from broker API overrides agent_inference assumption.
+# ConflictDetector catches same-subject, same-predicate, different-object.
+
+scenario: "jasper incident 1: equity hardcoded contradiction"
+
+agents:
+  - id: jasper-code
+    role: code
+    subscriptions:
+      - topic: "trading.*"
+  - id: jasper-trader
+    role: trader
+    subscriptions:
+      - topic: "trading.*"
+
+steps:
+  # Step 0: jasper-code ingests the assumption "equity = 10000"
+  # source_type=agent_inference → low trust weight (0.4)
+  - action: ingest
+    agent: jasper-code
+    save_as: assumed_equity
+    fact:
+      subject: "account_equity"
+      predicate: "has_value"
+      object: "10000"
+      context: "initial setup assumption for position sizing"
+    source_type: agent_inference
+    tags: [trading.config]
+
+  # Step 1: jasper-trader later gets real balance from broker API
+  # source_type=system_verification → high trust weight (0.85)
+  - action: ingest
+    agent: jasper-trader
+    save_as: real_equity
+    fact:
+      subject: "account_equity"
+      predicate: "has_value"
+      object: "1077.64"
+      context: "Capital.com broker API balance check"
+    source_type: system_verification
+    tags: [trading.config]
+
+  # Step 2: The assumed equity should have lower confidence (agent_inference)
+  - action: assert_fact
+    fact_ref: assumed_equity
+    expect:
+      max_confidence: 0.5
+
+  # Step 3: The real equity should have higher confidence (system_verification)
+  - action: assert_fact
+    fact_ref: real_equity
+    expect:
+      min_confidence: 0.6
+
+  # Step 4: jasper-code should receive propagation about the real equity
+  # (subscribed to trading.*, and the fact is tagged trading.config)
+  - action: assert_propagation
+    agent: jasper-code
+    expect:
+      min_events: 1
+
+  # Step 5: The assumed equity is queryable by its exact content
+  - action: assert_query
+    agent: jasper-trader
+    query: "account_equity has_value 10000 initial setup assumption for position sizing"
+    expect:
+      min_results: 1
+      subject: "account_equity"
+
+  # Step 6: The real equity is also queryable
+  - action: assert_query
+    agent: jasper-code
+    query: "account_equity has_value 1077.64 Capital.com broker API balance check"
+    expect:
+      min_results: 1
+      subject: "account_equity"

@@ -1,0 +1,75 @@
+# Incident 6: Duplicate Job Leads (Ongoing)
+#
+# Real incident: jasper-research and jasper-planner both found Mascot AM Fyn
+# independently. Same job lead, double alert to Tobias.
+#
+# Mycelium detection: First agent ingests the job lead fact.
+# Second agent ingests identical fact → corroboration detected at ingest time.
+# The second ingest still succeeds (accepted), but corroboration is recorded,
+# and the second agent can see the existing fact via query.
+
+scenario: "jasper incident 6: duplicate job leads — corroboration prevents duplicates"
+
+agents:
+  - id: jasper-research
+    role: code
+    subscriptions:
+      - topic: "jobs.*"
+  - id: jasper-planner
+    role: code
+    subscriptions:
+      - topic: "jobs.*"
+
+steps:
+  # Step 0: jasper-research discovers job lead first
+  - action: ingest
+    agent: jasper-research
+    save_as: lead_research
+    fact:
+      subject: "job_lead_mascot_am_fyn"
+      predicate: "has_status"
+      object: "discovered"
+      context: "Mascot AM Fyn — found via web search"
+    source_type: agent_extraction
+    tags: [jobs.leads]
+
+  # Step 1: jasper-planner should receive propagation
+  - action: assert_propagation
+    agent: jasper-planner
+    expect:
+      count: 1
+
+  # Step 2: jasper-planner independently discovers the same lead
+  # The ingest succeeds, but the system records corroboration
+  - action: ingest
+    agent: jasper-planner
+    save_as: lead_planner
+    fact:
+      subject: "job_lead_mascot_am_fyn"
+      predicate: "has_status"
+      object: "discovered"
+      context: "Mascot AM Fyn — found independently via job board"
+    source_type: agent_extraction
+    tags: [jobs.leads]
+
+  # Step 3: Query for job leads — both facts exist but linked via same subject
+  - action: assert_query
+    agent: jasper-planner
+    query: "job_lead_mascot_am_fyn"
+    expect:
+      min_results: 1
+      subject: "job_lead_mascot_am_fyn"
+
+  # Step 4: Explicit corroboration links the two discoveries
+  - action: corroborate
+    agent: jasper-planner
+    fact_ref: lead_research
+    corroborating_fact_ref: lead_planner
+    reason: "independently discovered same job lead"
+
+  # Step 5: Original fact now has corroboration — higher confidence
+  - action: assert_fact
+    fact_ref: lead_research
+    expect:
+      min_corroboration_count: 1
+      min_confidence: 0.6

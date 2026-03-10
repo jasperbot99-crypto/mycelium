@@ -1,0 +1,66 @@
+# Incident 2: Phantom Trade Adapter (Dag 9 — 2026-03-09)
+#
+# Real incident: All trades for 3 weeks went to a fake "Paper Trading (Simulated)"
+# adapter. 25+ trades with fake PnL. All learnings were invalid.
+#
+# Mycelium detection: Fact "broker_routing=configured" ingested as agent_inference.
+# Without system_verification corroboration, confidence stays low.
+# After stale window, verification_status → STALE.
+# We simulate this by using the verify action with status=stale (temporal_check).
+
+scenario: "jasper incident 2: phantom adapter — unverified config goes stale"
+
+agents:
+  - id: jasper-trader
+    role: trader
+    subscriptions:
+      - topic: "trading.*"
+  - id: jasper-verifier
+    role: verifier
+    subscriptions:
+      - topic: "trading.*"
+
+steps:
+  # Step 0: jasper-trader ingests broker routing assumption
+  - action: ingest
+    agent: jasper-trader
+    save_as: broker_routing
+    fact:
+      subject: "broker_routing"
+      predicate: "configured_as"
+      object: "alpaca_paper"
+      context: "initial setup — assumed correct"
+    source_type: agent_inference
+    tags: [trading.config]
+
+  # Step 1: Verify initial state — low confidence from agent_inference
+  - action: assert_fact
+    fact_ref: broker_routing
+    expect:
+      verification_status: "unverified"
+      max_confidence: 0.5
+
+  # Step 2: Time passes, no verification comes. A temporal check marks it stale.
+  # In production, DecayCycleRunner would do this automatically.
+  # In the scenario, we simulate with an explicit verify action.
+  - action: verify
+    agent: jasper-verifier
+    fact_ref: broker_routing
+    method: "temporal_check"
+    status: "stale"
+    reason: "no system_verification received within monitoring window"
+
+  # Step 3: Fact is now marked stale — any querying agent sees the warning
+  - action: assert_fact
+    fact_ref: broker_routing
+    expect:
+      verification_status: "stale"
+      max_confidence: 0.4
+
+  # Step 4: Query still returns the fact, but with stale status
+  - action: assert_query
+    agent: jasper-trader
+    query: "broker_routing configured_as"
+    expect:
+      min_results: 1
+      subject: "broker_routing"

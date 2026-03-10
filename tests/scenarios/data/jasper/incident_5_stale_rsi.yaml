@@ -1,0 +1,107 @@
+# Incident 5: Stale RSI/ATR=0 Data (Dag 8 — 2026-03-08)
+#
+# Real incident: jasper-trader received RSI=100 and ATR=0 for stocks/FX.
+# Mathematically impossible/edge-case values. Trades continued on invalid signals.
+#
+# Mycelium detection: Series of normal RSI facts establish a pattern.
+# Anomalous RSI=100 is ingested. Verification marks the anomaly as failed.
+# The contrast between verified normal values and the failed anomaly catches it.
+
+scenario: "jasper incident 5: anomalous RSI — verification catches invalid data"
+
+agents:
+  - id: jasper-trader
+    role: trader
+    subscriptions:
+      - topic: "market.*"
+  - id: jasper-verifier
+    role: verifier
+    subscriptions:
+      - topic: "market.*"
+
+steps:
+  # Step 0-2: Series of normal RSI readings (verified by system)
+  - action: ingest
+    agent: jasper-trader
+    save_as: rsi_normal_1
+    fact:
+      subject: "AAPL_RSI"
+      predicate: "has_value"
+      object: "45.2"
+      context: "15m RSI reading — normal range"
+    source_type: system_verification
+    tags: [market.indicators]
+
+  - action: ingest
+    agent: jasper-trader
+    save_as: rsi_normal_2
+    fact:
+      subject: "AAPL_RSI"
+      predicate: "has_value"
+      object: "52.8"
+      context: "15m RSI reading — normal range"
+    source_type: system_verification
+    tags: [market.indicators]
+
+  - action: ingest
+    agent: jasper-trader
+    save_as: rsi_normal_3
+    fact:
+      subject: "AAPL_RSI"
+      predicate: "has_value"
+      object: "38.1"
+      context: "15m RSI reading — normal range"
+    source_type: system_verification
+    tags: [market.indicators]
+
+  # Step 3: Normal readings have good confidence from system_verification
+  - action: assert_fact
+    fact_ref: rsi_normal_1
+    expect:
+      min_confidence: 0.6
+
+  # Step 4: Anomalous RSI=100 ingested — this is the bad data
+  - action: ingest
+    agent: jasper-trader
+    save_as: rsi_anomaly
+    fact:
+      subject: "AAPL_RSI"
+      predicate: "has_value"
+      object: "100"
+      context: "15m RSI reading — ANOMALOUS: RSI=100 indicates calculation bug or stale data"
+    source_type: agent_extraction
+    tags: [market.indicators]
+
+  # Step 5: Anomaly has lower confidence (agent_extraction vs system_verification)
+  - action: assert_fact
+    fact_ref: rsi_anomaly
+    expect:
+      max_confidence: 0.7
+
+  # Step 6: Verifier marks the anomaly as failed after domain validation
+  - action: verify
+    agent: jasper-verifier
+    fact_ref: rsi_anomaly
+    method: "system_probe"
+    status: "failed"
+    reason: "RSI=100 is degenerate — indicates calculation bug or stale data feed"
+
+  # Step 7: Anomalous fact is now marked as failed verification
+  - action: assert_fact
+    fact_ref: rsi_anomaly
+    expect:
+      verification_status: "failed"
+      max_confidence: 0.5
+
+  # Step 8: Normal readings remain healthy
+  - action: assert_fact
+    fact_ref: rsi_normal_3
+    expect:
+      verification_status: "unverified"
+      min_confidence: 0.6
+
+  # Step 9: jasper-verifier received propagation events for the trader's facts
+  - action: assert_propagation
+    agent: jasper-verifier
+    expect:
+      min_events: 1

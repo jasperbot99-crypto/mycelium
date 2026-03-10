@@ -1,0 +1,69 @@
+# Incident 7: Config Set Without Verification (Dag 3-4 — 2026-03-03/04)
+#
+# Real incident: 13 crons set up with wrong delivery config (missing --to chatId).
+# All silently broken. Discovered day 4. All research output was lost.
+#
+# Mycelium detection: High-confidence agent_inference fact about config.
+# No system_verification corroboration within monitoring window.
+# Confidence stays at inference baseline, then decays to stale.
+
+scenario: "jasper incident 7: config without verification — low confidence + stale"
+
+agents:
+  - id: jasper-code
+    role: code
+    subscriptions:
+      - topic: "infrastructure.*"
+  - id: jasper-ops
+    role: ops
+    subscriptions:
+      - topic: "infrastructure.*"
+
+steps:
+  # Step 0: jasper-code ingests config claim
+  - action: ingest
+    agent: jasper-code
+    save_as: cron_config
+    fact:
+      subject: "cron_delivery"
+      predicate: "configured_as"
+      object: "13_crons_active"
+      context: "cron jobs configured with delivery settings"
+    source_type: agent_inference
+    tags: [infrastructure.cron]
+
+  # Step 1: jasper-ops receives propagation
+  - action: assert_propagation
+    agent: jasper-ops
+    expect:
+      count: 1
+
+  # Step 2: Fact starts with low confidence (agent_inference = 0.4 base)
+  - action: assert_fact
+    fact_ref: cron_config
+    expect:
+      verification_status: "unverified"
+      max_confidence: 0.5
+
+  # Step 3: No system_verification comes. Temporal check marks it stale.
+  - action: verify
+    agent: jasper-ops
+    fact_ref: cron_config
+    method: "temporal_check"
+    status: "stale"
+    reason: "no delivery confirmation logs received within 24h monitoring window"
+
+  # Step 4: Fact is now stale with degraded confidence
+  - action: assert_fact
+    fact_ref: cron_config
+    expect:
+      verification_status: "stale"
+      max_confidence: 0.4
+
+  # Step 5: Query returns the fact with stale status — clear re-verification signal
+  - action: assert_query
+    agent: jasper-code
+    query: "cron_delivery configured_as"
+    expect:
+      min_results: 1
+      subject: "cron_delivery"

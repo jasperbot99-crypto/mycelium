@@ -1,0 +1,69 @@
+# Incident 4: Silent Trading Pipeline Failure (Dag 6 — 2026-03-06)
+#
+# Real incident: Trading pipeline produced zero open_position entries for days.
+# Only check_positions entries. Pipeline was silently broken — no agent noticed.
+#
+# Mycelium detection: Fact "trading_pipeline=operational" ingested as agent_inference.
+# No corroboration from trade execution. Verify marks it stale.
+# Subscribers to trading.* receive propagation events.
+
+scenario: "jasper incident 4: silent pipeline — uncorroborated fact goes stale"
+
+agents:
+  - id: jasper-trader
+    role: trader
+    subscriptions:
+      - topic: "trading.*"
+  - id: jasper-ops
+    role: ops
+    subscriptions:
+      - topic: "trading.*"
+
+steps:
+  # Step 0: jasper-trader ingests pipeline operational assumption
+  - action: ingest
+    agent: jasper-trader
+    save_as: pipeline_status
+    fact:
+      subject: "trading_pipeline"
+      predicate: "has_status"
+      object: "operational"
+      context: "set during initial configuration"
+    source_type: agent_inference
+    tags: [trading.pipeline]
+
+  # Step 1: jasper-ops should receive propagation (subscribed to trading.*)
+  - action: assert_propagation
+    agent: jasper-ops
+    expect:
+      count: 1
+
+  # Step 2: Fact starts as unverified with low confidence
+  - action: assert_fact
+    fact_ref: pipeline_status
+    expect:
+      verification_status: "unverified"
+      max_confidence: 0.5
+
+  # Step 3: No trade execution corroborates the claim. Time passes.
+  # Temporal check marks it stale (simulates DecayCycleRunner behavior).
+  - action: verify
+    agent: jasper-ops
+    fact_ref: pipeline_status
+    method: "temporal_check"
+    status: "stale"
+    reason: "no open_position records in 48 hours — pipeline appears non-functional"
+
+  # Step 4: Fact is now stale — clear signal to investigate
+  - action: assert_fact
+    fact_ref: pipeline_status
+    expect:
+      verification_status: "stale"
+
+  # Step 5: Query still returns the fact so agents can see the stale warning
+  - action: assert_query
+    agent: jasper-trader
+    query: "trading_pipeline has_status"
+    expect:
+      min_results: 1
+      subject: "trading_pipeline"

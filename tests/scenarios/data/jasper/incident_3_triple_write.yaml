@@ -1,0 +1,94 @@
+# Incident 3: Triple-Write DB Explosion (Dag 3 — 2026-03-03)
+#
+# Real incident: Supabase hit 153% capacity (732MB/500MB). Every market tick
+# triggered triple-write: market_data + trading_lab_events + agent_events.
+#
+# Mycelium detection: Multiple agents ingest related facts about the same system.
+# Corroboration links them. Compound query returns the full picture.
+
+scenario: "jasper incident 3: triple-write — corroboration links related facts"
+
+agents:
+  - id: jasper-code
+    role: code
+    subscriptions:
+      - topic: "infrastructure.*"
+  - id: jasper-trader
+    role: trader
+    subscriptions:
+      - topic: "infrastructure.*"
+  - id: jasper-ops
+    role: ops
+    subscriptions:
+      - topic: "infrastructure.*"
+
+steps:
+  # Step 0: jasper-code ingests "event pipeline is working"
+  - action: ingest
+    agent: jasper-code
+    save_as: event_pipeline
+    fact:
+      subject: "event_pipeline"
+      predicate: "has_status"
+      object: "active"
+      context: "writes to trading_lab_events on every tick"
+    source_type: agent_extraction
+    tags: [infrastructure.database, storage]
+
+  # Step 1: jasper-trader ingests "market data is being stored"
+  - action: ingest
+    agent: jasper-trader
+    save_as: market_writes
+    fact:
+      subject: "market_data_pipeline"
+      predicate: "has_status"
+      object: "active"
+      context: "writes to market_data on every tick"
+    source_type: agent_extraction
+    tags: [infrastructure.database, storage]
+
+  # Step 2: jasper-ops ingests "trigger chain multiplies writes"
+  - action: ingest
+    agent: jasper-ops
+    save_as: trigger_chain
+    fact:
+      subject: "db_trigger_chain"
+      predicate: "has_status"
+      object: "active"
+      context: "agent_events trigger fires on market_data insert — 3x write amplification"
+    source_type: agent_extraction
+    tags: [infrastructure.database, storage]
+
+  # Step 3: jasper-ops corroborates the event_pipeline fact with the trigger_chain fact
+  # (they describe the same system — write amplification)
+  - action: corroborate
+    agent: jasper-ops
+    fact_ref: event_pipeline
+    corroborating_fact_ref: trigger_chain
+    reason: "trigger chain confirms event pipeline writes are multiplied"
+
+  # Step 4: The corroborated fact now has higher corroboration count
+  - action: assert_fact
+    fact_ref: event_pipeline
+    expect:
+      min_corroboration_count: 1
+
+  # Step 5: Each fact is individually queryable — an agent can see the full picture
+  - action: assert_query
+    agent: jasper-ops
+    query: "event_pipeline has_status active writes to trading_lab_events on every tick"
+    expect:
+      min_results: 1
+      subject: "event_pipeline"
+
+  # Step 6: jasper-code and jasper-trader received propagation events
+  # about facts from the other agents
+  - action: assert_propagation
+    agent: jasper-code
+    expect:
+      min_events: 2
+
+  - action: assert_propagation
+    agent: jasper-trader
+    expect:
+      min_events: 2
