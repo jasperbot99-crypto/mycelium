@@ -58,7 +58,7 @@ def _to_subscription_configs(
             min_confidence=item.min_confidence,
             source_types=[st.value for st in item.source_types] if item.source_types else None,
         )
-        for item in req.subscriptions
+        for item in (req.subscriptions or [])
     ]
 
 

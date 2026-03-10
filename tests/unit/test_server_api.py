@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -31,7 +32,7 @@ class _FakeClient:
         content: FactContent,
         source_type: SourceType,
         tags: list[str] | None = None,
-        derived_from: list | None = None,
+        derived_from: list[object] | None = None,
         metadata: dict[str, object] | None = None,
         initial_confidence: float | None = None,
     ) -> IngestResult:
@@ -48,7 +49,9 @@ class _FakeClient:
         )
         return IngestResult(fact=fact)
 
-    async def query(self, question: str, filters=None, limit=None) -> list[QueryResult]:
+    async def query(
+        self, question: str, filters: object | None = None, limit: int | None = None,
+    ) -> list[QueryResult]:
         del question, filters, limit
         fact = Fact(
             id=uuid4(),
@@ -70,7 +73,9 @@ class _DummyState:
         self.sweeper = _RunnerState(running=True)
         self.decay_runner = _RunnerState(running=True)
 
-    async def connect_agent(self, agent_id: str, role: str = "generic", subscriptions=None):
+    async def connect_agent(
+        self, agent_id: str, role: str = "generic", subscriptions: list[Any] | None = None,
+    ) -> _FakeClient:
         del role, subscriptions
         client = _FakeClient(agent_id)
         self._clients[agent_id] = client
@@ -87,9 +92,10 @@ class _DummyState:
 
 
 def _client(api_key: str = "test-key") -> TestClient:
+    dummy: Any = _DummyState()
     app = create_app(
         MyceliumConfig(server_api_key=api_key),
-        state=_DummyState(),
+        state=dummy,
     )
     return TestClient(app)
 

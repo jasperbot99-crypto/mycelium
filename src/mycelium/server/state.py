@@ -93,9 +93,10 @@ class ServerState:
             await self.decay_runner.stop()
 
         if self.embedding_provider is not None:
-            close = getattr(self.embedding_provider, "close", None)
-            if callable(close):
-                await close()
+            close_fn = getattr(self.embedding_provider, "close", None)
+            if callable(close_fn):
+                result: Any = close_fn()
+                await result
 
         if self.pool is not None:
             await self.pool.close()

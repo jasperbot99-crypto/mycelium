@@ -158,8 +158,8 @@ class IngestResponse(BaseModel):
     accepted: bool
     fact: FactDTO | None = None
     rejection: RejectionDTO | None = None
-    contradiction_fact_ids: list[UUID] = Field(default_factory=list)
-    corroboration_fact_ids: list[UUID] = Field(default_factory=list)
+    contradiction_fact_ids: list[UUID] = Field(default_factory=lambda: list[UUID]())
+    corroboration_fact_ids: list[UUID] = Field(default_factory=lambda: list[UUID]())
 
 
 class QueryRequest(BaseModel):

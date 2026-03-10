@@ -65,7 +65,7 @@ class MyceliumConfig:
     server_port: int = 8080
     server_api_key: str | None = None
     server_request_timeout_s: float = 30.0
-    server_cors_allow_origins: list[str] = field(default_factory=list)
+    server_cors_allow_origins: list[str] = field(default_factory=lambda: list[str]())
     benchmark_enabled: bool = False
 
     # Agent (set per client instance)

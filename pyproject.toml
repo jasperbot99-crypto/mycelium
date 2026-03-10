@@ -52,3 +52,4 @@ typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
 stubPath = "typings"
+reportUnusedFunction = false

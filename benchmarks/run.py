@@ -19,7 +19,13 @@ from uuid import uuid4
 
 from mycelium.client.client import MyceliumClient
 from mycelium.config import MyceliumConfig
-from mycelium.domain.types import Conflict, ConflictStatus, FactContent, SourceType
+from mycelium.domain.types import (
+    Conflict,
+    ConflictStatus,
+    FactContent,
+    PropagationEvent,
+    SourceType,
+)
 from mycelium.embeddings.mock import MockEmbeddingProvider
 from mycelium.storage.memory import (
     InMemoryAgentRepository,
@@ -121,7 +127,7 @@ async def run_benchmarks(iterations: int) -> BenchmarkResult:
     )
 
     # Simple listener to exercise propagation path.
-    async def _sink(_):
+    async def _sink(_: PropagationEvent) -> None:
         return None
 
     consumer.on_fact(_sink)

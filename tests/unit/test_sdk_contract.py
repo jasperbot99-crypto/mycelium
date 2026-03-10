@@ -8,6 +8,8 @@ import pytest
 
 pytest.importorskip("fastapi")
 
+from typing import Any
+
 from mycelium.config import MyceliumConfig
 from mycelium.server.app import create_app
 
@@ -25,7 +27,8 @@ class _DummyState:
 
 
 def test_typescript_sdk_endpoints_exist_in_openapi() -> None:
-    app = create_app(MyceliumConfig(server_api_key="x"), state=_DummyState())
+    dummy: Any = _DummyState()
+    app = create_app(MyceliumConfig(server_api_key="x"), state=dummy)
     schema = app.openapi()
     openapi_paths = set(schema["paths"].keys())
 
