@@ -296,6 +296,7 @@ class ConnectRequest(BaseModel):
 class ConnectResponse(BaseModel):
     agent_id: str
     connected: bool
+    connected_since: datetime | None = None
 
 
 class UpdateContextRequest(BaseModel):

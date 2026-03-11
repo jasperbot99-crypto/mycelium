@@ -81,6 +81,7 @@ export interface ConnectRequest {
 export interface ConnectResponse {
   agent_id: string;
   connected: boolean;
+  connected_since?: string | null;
 }
 
 export interface Subscription {

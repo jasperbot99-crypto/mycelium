@@ -233,3 +233,10 @@ _Deferred from Phase 1 core — must complete before Phase 2._
 - [x] Explicit feedback API (`POST /v1/agents/{agent_id}/feedback`) with fact score/trust updates
 - [x] VerificationCycleRunner (automated verification of unverified facts)
 - [x] Semantic dedup at ingest (`>0.95` + same subject/predicate/object => no new fact)
+- [x] Connect handshake includes `connected_since` for connector-side 1h connect caching
+- [x] Server `/metrics` endpoint (fact/agent/conflict counts + query error/latency gauges)
+- [x] AdaptiveLearningRunner: implicit feedback ingestion from `mycelium_metrics`
+- [x] AdaptiveLearningRunner: agent reliability trust loop + query-gap detection
+- [x] AdaptiveLearningRunner: feedback-based ranking auto-tuning (`agent.metadata.ranking_adjustment`)
+- [x] AdaptiveLearningRunner: summary/trend extraction meta-facts from version churn
+- [x] Embedding quality benchmark script (`benchmarks/embedding_quality.py`)

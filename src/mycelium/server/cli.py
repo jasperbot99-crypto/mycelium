@@ -31,6 +31,9 @@ def build_config_from_env() -> MyceliumConfig:
             if value.strip()
         ],
         benchmark_enabled=_env_bool("MYCELIUM_BENCHMARK_ENABLED"),
+        adaptive_learning_cycle_interval_hours=int(
+            os.getenv("MYCELIUM_ADAPTIVE_LEARNING_CYCLE_HOURS", "6")
+        ),
     )
 
 

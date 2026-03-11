@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -22,6 +23,10 @@ from mycelium.extraction.daily_notes import (
     default_daily_notes_workspaces,
 )
 from mycelium.ops.logger import NullOpsLogger, OpsLogger
+from mycelium.pipelines.adaptive_learning import (
+    AdaptiveLearningConfig,
+    AdaptiveLearningRunner,
+)
 from mycelium.pipelines.decay import DecayConfig, DecayCycleRunner
 from mycelium.pipelines.sweeper import ContradictionSweeper
 from mycelium.pipelines.verification import VerificationPipeline
@@ -64,8 +69,10 @@ class ServerState:
         self.sweeper: ContradictionSweeper | None = None
         self.decay_runner: DecayCycleRunner | None = None
         self.verification_runner: VerificationCycleRunner | None = None
+        self.adaptive_learning_runner: AdaptiveLearningRunner | None = None
 
         self._clients: dict[str, MyceliumClient] = {}
+        self._connected_since: dict[str, datetime] = {}
 
     @property
     def clients(self) -> dict[str, MyceliumClient]:
@@ -112,10 +119,21 @@ class ServerState:
             ),
             ops_logger=self.ops_logger,
         )
+        self.adaptive_learning_runner = AdaptiveLearningRunner(
+            pool=self.pool,
+            fact_repo=self.fact_repo,
+            agent_repo=self.agent_repo,
+            system_client_factory=self._get_system_learning_client,
+            config=AdaptiveLearningConfig(
+                cycle_interval_hours=self.config.adaptive_learning_cycle_interval_hours,
+            ),
+            ops_logger=self.ops_logger,
+        )
 
         await self.sweeper.start()
         await self.decay_runner.start()
         await self.verification_runner.start()
+        await self.adaptive_learning_runner.start()
 
     async def shutdown(self) -> None:
         for agent_id in list(self._clients.keys()):
@@ -129,6 +147,8 @@ class ServerState:
             await self.decay_runner.stop()
         if self.verification_runner is not None:
             await self.verification_runner.stop()
+        if self.adaptive_learning_runner is not None:
+            await self.adaptive_learning_runner.stop()
 
         if self.embedding_provider is not None:
             close_fn = getattr(self.embedding_provider, "close", None)
@@ -178,6 +198,7 @@ class ServerState:
         )
         await client.connect()
         self._clients[agent_id] = client
+        self._connected_since.setdefault(agent_id, datetime.now(UTC))
         return client
 
     async def disconnect_agent(self, agent_id: str) -> None:
@@ -193,6 +214,9 @@ class ServerState:
         if client is None or not client.connected:
             raise ValueError(f"agent '{agent_id}' is not connected")
         return client
+
+    def get_connected_since(self, agent_id: str) -> datetime | None:
+        return self._connected_since.get(agent_id)
 
     async def sync_subscriptions(
         self,
@@ -306,6 +330,61 @@ class ServerState:
         filtered = [fact for fact in rows if fact.source_agent_id == agent_id]
         filtered.sort(key=lambda fact: fact.created_at, reverse=True)
         return filtered[offset: offset + limit]
+
+    async def metrics_snapshot(self) -> dict[str, float | int]:
+        assert self.pool is not None
+
+        active_facts_row = await self.pool.fetchrow(
+            """
+            SELECT COUNT(*)::int AS count
+            FROM mycelium.facts
+            WHERE expired_at IS NULL
+              AND valid_until IS NULL
+            """
+        )
+        agents_row = await self.pool.fetchrow(
+            "SELECT COUNT(*)::int AS count FROM mycelium.agents"
+        )
+        conflict_row = await self.pool.fetchrow(
+            """
+            SELECT COUNT(*)::int AS count
+            FROM mycelium.conflicts
+            WHERE status = 'detected'
+            """
+        )
+        query_row = await self.pool.fetchrow(
+            """
+            SELECT
+                COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE status <> 'success')::int AS errors,
+                COALESCE(AVG(latency_ms), 0)::float AS avg_latency,
+                COALESCE(
+                    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms),
+                    0
+                )::float AS p95_latency
+            FROM ops.operation_log
+            WHERE operation = 'query'
+              AND created_at >= $1
+            """,
+            datetime.now(UTC) - timedelta(hours=1),
+        )
+
+        return {
+            "mycelium_active_facts": int(active_facts_row["count"]) if active_facts_row else 0,
+            "mycelium_agents": int(agents_row["count"]) if agents_row else 0,
+            "mycelium_unresolved_conflicts": int(conflict_row["count"]) if conflict_row else 0,
+            "mycelium_query_total_1h": int(query_row["total"]) if query_row else 0,
+            "mycelium_query_errors_1h": int(query_row["errors"]) if query_row else 0,
+            "mycelium_query_latency_avg_ms_1h": float(query_row["avg_latency"])
+            if query_row
+            else 0.0,
+            "mycelium_query_latency_p95_ms_1h": float(query_row["p95_latency"])
+            if query_row
+            else 0.0,
+        }
+
+    async def _get_system_learning_client(self) -> MyceliumClient:
+        return await self.connect_agent("mycelium-meta-learner", role="system")
 
     def _build_embedding_provider(self) -> EmbeddingProvider:
         if self.config.embedding_provider is not None:

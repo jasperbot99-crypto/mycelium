@@ -8,7 +8,7 @@ from uuid import UUID  # noqa: TC003
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from mycelium.config import MyceliumConfig, SubscriptionConfig
 from mycelium.pipelines.parsing import (
@@ -124,12 +124,20 @@ def create_app(config: MyceliumConfig, state: ServerState | None = None) -> Fast
             role=request.role,
             subscriptions=subs,
         )
-        return ConnectResponse(agent_id=client.agent_id, connected=client.connected)
+        get_connected_since = getattr(server_state, "get_connected_since", None)
+        connected_since = (
+            get_connected_since(client.agent_id) if callable(get_connected_since) else None
+        )
+        return ConnectResponse(
+            agent_id=client.agent_id,
+            connected=client.connected,
+            connected_since=connected_since,
+        )
 
     @router.post("/agents/{agent_id}/disconnect", response_model=ConnectResponse)
     async def disconnect_agent(agent_id: str) -> ConnectResponse:
         await server_state.disconnect_agent(agent_id)
-        return ConnectResponse(agent_id=agent_id, connected=False)
+        return ConnectResponse(agent_id=agent_id, connected=False, connected_since=None)
 
     @router.post(
         "/agents/{agent_id}/ingest",
@@ -447,6 +455,12 @@ def create_app(config: MyceliumConfig, state: ServerState | None = None) -> Fast
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Verification runner not running",
             )
+        adaptive_runner = getattr(server_state, "adaptive_learning_runner", None)
+        if adaptive_runner is None or not adaptive_runner.running:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Adaptive learning runner not running",
+            )
         return HealthResponse(status="ready")
 
     @app.get("/version", response_model=VersionResponse)
@@ -456,6 +470,46 @@ def create_app(config: MyceliumConfig, state: ServerState | None = None) -> Fast
         except PackageNotFoundError:
             pkg_version = "0.1.0"
         return VersionResponse(service="mycelium-server", version=pkg_version)
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    async def metrics() -> PlainTextResponse:
+        metrics_snapshot = getattr(server_state, "metrics_snapshot", None)
+        if callable(metrics_snapshot):
+            values = await metrics_snapshot()
+        else:
+            values = {
+                "mycelium_active_facts": 0,
+                "mycelium_agents": 0,
+                "mycelium_unresolved_conflicts": 0,
+                "mycelium_query_total_1h": 0,
+                "mycelium_query_errors_1h": 0,
+                "mycelium_query_latency_avg_ms_1h": 0.0,
+                "mycelium_query_latency_p95_ms_1h": 0.0,
+            }
+        lines = [
+            "# HELP mycelium_active_facts Active non-expired facts.",
+            "# TYPE mycelium_active_facts gauge",
+            f"mycelium_active_facts {values['mycelium_active_facts']}",
+            "# HELP mycelium_agents Registered agents.",
+            "# TYPE mycelium_agents gauge",
+            f"mycelium_agents {values['mycelium_agents']}",
+            "# HELP mycelium_unresolved_conflicts Unresolved conflicts.",
+            "# TYPE mycelium_unresolved_conflicts gauge",
+            f"mycelium_unresolved_conflicts {values['mycelium_unresolved_conflicts']}",
+            "# HELP mycelium_query_total_1h Queries logged in the last hour.",
+            "# TYPE mycelium_query_total_1h gauge",
+            f"mycelium_query_total_1h {values['mycelium_query_total_1h']}",
+            "# HELP mycelium_query_errors_1h Query errors in the last hour.",
+            "# TYPE mycelium_query_errors_1h gauge",
+            f"mycelium_query_errors_1h {values['mycelium_query_errors_1h']}",
+            "# HELP mycelium_query_latency_avg_ms_1h Average query latency in ms (1h).",
+            "# TYPE mycelium_query_latency_avg_ms_1h gauge",
+            f"mycelium_query_latency_avg_ms_1h {values['mycelium_query_latency_avg_ms_1h']}",
+            "# HELP mycelium_query_latency_p95_ms_1h P95 query latency in ms (1h).",
+            "# TYPE mycelium_query_latency_p95_ms_1h gauge",
+            f"mycelium_query_latency_p95_ms_1h {values['mycelium_query_latency_p95_ms_1h']}",
+        ]
+        return PlainTextResponse("\n".join(lines) + "\n")
 
     @app.exception_handler(ValueError)
     async def value_error_handler(_, exc: ValueError):

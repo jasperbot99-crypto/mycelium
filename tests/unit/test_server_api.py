@@ -138,6 +138,9 @@ class _DummyState:
         self.pool = object()
         self.sweeper = _RunnerState(running=True)
         self.decay_runner = _RunnerState(running=True)
+        self.verification_runner = _RunnerState(running=True)
+        self.adaptive_learning_runner = _RunnerState(running=True)
+        self._connected_since: dict[str, datetime] = {}
 
     async def connect_agent(
         self, agent_id: str, role: str = "generic", subscriptions: list[Any] | None = None,
@@ -145,6 +148,7 @@ class _DummyState:
         del role, subscriptions
         client = _FakeClient(agent_id)
         self._clients[agent_id] = client
+        self._connected_since.setdefault(agent_id, datetime.now(UTC))
         return client
 
     async def disconnect_agent(self, agent_id: str) -> None:
@@ -155,6 +159,9 @@ class _DummyState:
         if client is None:
             raise ValueError(f"agent '{agent_id}' is not connected")
         return client
+
+    def get_connected_since(self, agent_id: str) -> datetime | None:
+        return self._connected_since.get(agent_id)
 
     async def run_daily_notes_extraction(
         self,
@@ -207,6 +214,17 @@ class _DummyState:
             )
         ]
 
+    async def metrics_snapshot(self) -> dict[str, float | int]:
+        return {
+            "mycelium_active_facts": 1,
+            "mycelium_agents": 2,
+            "mycelium_unresolved_conflicts": 0,
+            "mycelium_query_total_1h": 3,
+            "mycelium_query_errors_1h": 1,
+            "mycelium_query_latency_avg_ms_1h": 12.5,
+            "mycelium_query_latency_p95_ms_1h": 30.0,
+        }
+
 
 def _client(api_key: str = "test-key") -> TestClient:
     dummy: Any = _DummyState()
@@ -234,6 +252,7 @@ def test_connect_ingest_query_roundtrip() -> None:
     )
     assert connect.status_code == 200
     assert connect.json()["connected"] is True
+    assert connect.json()["connected_since"] is not None
 
     ingest = client.post(
         "/v1/agents/a1/ingest",
@@ -316,3 +335,12 @@ def test_feedback_endpoint() -> None:
     payload = response.json()
     assert payload["signal"] == "wrong"
     assert payload["verification_status"] == "failed"
+
+
+def test_metrics_endpoint() -> None:
+    client = _client()
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    text = response.text
+    assert "mycelium_active_facts 1" in text
+    assert "mycelium_query_errors_1h 1" in text

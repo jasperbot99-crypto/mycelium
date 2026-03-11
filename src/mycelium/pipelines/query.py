@@ -135,6 +135,8 @@ class QueryEngine:
         active_context: ActiveContext | None = None,
         agent_role: str | None = None,
         ranking_profile: RankingProfile | None = None,
+        ranking_adjustment: dict[str, object] | None = None,
+        requester_agent_id: str | None = None,
     ) -> list[QueryResult]:
         """Run the full query pipeline.
 
@@ -208,6 +210,7 @@ class QueryEngine:
         now = datetime.now(UTC)
         ranked: list[QueryResult] = []
         profile = self._resolve_profile(agent_role, ranking_profile)
+        profile = self._apply_profile_adjustment(profile, ranking_adjustment)
         for fact, similarity in filtered:
             score = self._compute_score(
                 fact,
@@ -230,6 +233,7 @@ class QueryEngine:
 
         await self._ops.log(
             "query", "success",
+            agent_id=requester_agent_id,
             latency_ms=ms_since(t0),
             detail={
                 "question": question,
@@ -241,6 +245,38 @@ class QueryEngine:
         )
 
         return final
+
+    def _apply_profile_adjustment(
+        self,
+        profile: RankingProfile,
+        adjustment: dict[str, object] | None,
+    ) -> RankingProfile:
+        if not adjustment:
+            return profile
+
+        similarity_delta = _as_float(adjustment.get("similarity_weight_delta"))
+        trust_delta = _as_float(adjustment.get("trust_weight_delta"))
+        recency_delta = _as_float(adjustment.get("recency_weight_delta"))
+        if similarity_delta is None and trust_delta is None and recency_delta is None:
+            return profile
+
+        sim = max(0.05, profile.similarity_weight + (similarity_delta or 0.0))
+        trust = max(0.05, profile.trust_weight + (trust_delta or 0.0))
+        recency = max(0.05, profile.recency_weight + (recency_delta or 0.0))
+        total = sim + trust + recency
+
+        return RankingProfile(
+            similarity_weight=round(sim / total, 4),
+            trust_weight=round(trust / total, 4),
+            recency_weight=round(recency / total, 4),
+            recency_half_life_hours=profile.recency_half_life_hours,
+            verification_boost=profile.verification_boost,
+            stale_penalty=profile.stale_penalty,
+            failed_penalty=profile.failed_penalty,
+            unresolved_conflict_penalty=profile.unresolved_conflict_penalty,
+            no_access_stale_penalty=profile.no_access_stale_penalty,
+            no_access_grace_hours=profile.no_access_grace_hours,
+        )
 
     def _passes_filters(self, fact: Fact, filters: QueryFilters) -> bool:
         """Check if a fact passes the query filters."""
@@ -264,7 +300,13 @@ class QueryEngine:
         Score = w_sim * similarity + w_trust * trust_score + w_recency * recency_factor
         """
         # Recency factor: exponential decay from valid_from
-        age_hours = max(0, (now - fact.valid_from).total_seconds() / 3600)
+        # Ensure both datetimes have matching awareness to avoid TypeError
+        valid_from = fact.valid_from
+        if valid_from.tzinfo is None and now.tzinfo is not None:
+            valid_from = valid_from.replace(tzinfo=now.tzinfo)
+        elif valid_from.tzinfo is not None and now.tzinfo is None:
+            now = now.replace(tzinfo=valid_from.tzinfo)
+        age_hours = max(0, (now - valid_from).total_seconds() / 3600)
         recency = 0.5 ** (age_hours / max(1, profile.recency_half_life_hours))
         score = (
             profile.similarity_weight * similarity
@@ -361,3 +403,14 @@ class QueryEngine:
         if urgency == "elevated":
             return 0.20
         return 0.10
+
+
+def _as_float(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None

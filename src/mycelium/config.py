@@ -73,6 +73,7 @@ class MyceliumConfig:
     query_result_limit: int = 20
     decay_cycle_interval_hours: int = 24
     verification_cycle_interval_hours: int = 24
+    adaptive_learning_cycle_interval_hours: int = 6
 
     # Operational logging
     ops_log_enabled: bool = True

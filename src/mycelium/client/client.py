@@ -315,6 +315,11 @@ class MyceliumClient:
 
         agent = await self._agent_repo.get_by_id(self._agent_id)
         active_context = agent.active_context if agent is not None else None
+        ranking_adjustment: dict[str, object] | None = None
+        if agent is not None:
+            candidate = agent.metadata.get("ranking_adjustment")
+            if isinstance(candidate, dict):
+                ranking_adjustment = candidate
 
         return await self._query_engine.query(
             question=question,
@@ -323,6 +328,8 @@ class MyceliumClient:
             active_context=active_context,
             agent_role=agent.role if agent is not None else self._role,
             ranking_profile=self._ranking_profile,
+            ranking_adjustment=ranking_adjustment,
+            requester_agent_id=self._agent_id,
         )
 
     async def correct(

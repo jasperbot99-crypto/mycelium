@@ -847,3 +847,58 @@ class TestQueryEngine:
         )
         assert len(results) == 2
         assert results[0].fact.id == recent_read.id
+
+    @pytest.mark.asyncio
+    async def test_query_applies_feedback_autotune_profile_adjustment(
+        self,
+        query_engine: QueryEngine,
+        fact_repo: InMemoryFactRepository,
+        embedding: MockEmbeddingProvider,
+    ) -> None:
+        base = FactContent(subject="svc", predicate="has_status", object="healthy")
+        vec = await embedding.embed(base.to_embedding_text())
+        recent = Fact(
+            id=uuid4(),
+            content=base,
+            source_agent_id="agent-recent",
+            source_type=SourceType.AGENT_EXTRACTION,
+            confidence=0.8,
+            trust_score=0.8,
+            valid_from=datetime.now(UTC) - timedelta(hours=2),
+            embedding=vec,
+        )
+        old = Fact(
+            id=uuid4(),
+            content=base,
+            source_agent_id="agent-old",
+            source_type=SourceType.AGENT_EXTRACTION,
+            confidence=0.8,
+            trust_score=0.8,
+            valid_from=datetime.now(UTC) - timedelta(days=15),
+            embedding=vec,
+        )
+        await fact_repo.insert(recent)
+        await fact_repo.insert(old)
+
+        baseline = await query_engine.query(
+            "svc has_status healthy",
+            filters=QueryFilters(consolidate_by_subject=False),
+            agent_role="code",
+            limit=2,
+        )
+        tuned = await query_engine.query(
+            "svc has_status healthy",
+            filters=QueryFilters(consolidate_by_subject=False),
+            agent_role="code",
+            ranking_adjustment={
+                "similarity_weight_delta": -0.2,
+                "trust_weight_delta": -0.2,
+                "recency_weight_delta": 0.4,
+            },
+            limit=2,
+        )
+        assert len(baseline) == 2
+        assert len(tuned) == 2
+        baseline_gap = baseline[0].score - baseline[1].score
+        tuned_gap = tuned[0].score - tuned[1].score
+        assert tuned_gap > baseline_gap
