@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpx
@@ -65,7 +65,7 @@ def _make_fact(*, source: SourceType, obj: str) -> Fact:
         source_type=source,
         confidence=0.6,
         trust_score=0.5,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
     )
 
 

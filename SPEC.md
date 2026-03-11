@@ -1,7 +1,7 @@
 # Multi-Agent Memory System — Top-Level Specification
 
 _Version: 0.3 — 2026-03-10_
-_Authors: Tobias + Jasper_
+_Authors: Project Team_
 _Status: Draft — reviewed, all open questions resolved_
 _Project name: **Mycelium**_
 

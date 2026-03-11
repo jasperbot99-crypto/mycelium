@@ -6,7 +6,7 @@ no SQL. Used for unit tests and as a stepping stone before Postgres.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ class InMemoryFactRepository:
     async def expire(self, fact_id: UUID, expired_at: datetime | None = None) -> None:
         fact = self._facts.get(fact_id)
         if fact is not None:
-            fact.expired_at = expired_at or datetime.now()
+            fact.expired_at = expired_at or datetime.now(UTC)
 
     async def set_valid_until(self, fact_id: UUID, valid_until: datetime) -> None:
         fact = self._facts.get(fact_id)
@@ -122,7 +122,7 @@ class InMemoryFactRepository:
         fact = self._facts.get(fact_id)
         if fact is not None:
             fact.access_count += 1
-            fact.last_accessed_at = datetime.now()
+            fact.last_accessed_at = datetime.now(UTC)
 
     async def update_verification(
         self,
@@ -133,7 +133,7 @@ class InMemoryFactRepository:
         fact = self._facts.get(fact_id)
         if fact is not None:
             fact.verification_status = status
-            fact.last_verified_at = verified_at or datetime.now()
+            fact.last_verified_at = verified_at or datetime.now(UTC)
 
     async def find_created_since(
         self,
@@ -150,6 +150,20 @@ class InMemoryFactRepository:
 
     async def find_all_active(self) -> list[Fact]:
         return [f for f in self._facts.values() if f.is_active]
+
+    async def list_for_agent(
+        self,
+        agent_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        active_only: bool = True,
+    ) -> list[Fact]:
+        rows = [f for f in self._facts.values() if f.source_agent_id == agent_id]
+        if active_only:
+            rows = [f for f in rows if f.is_active]
+        rows.sort(key=lambda f: f.created_at, reverse=True)
+        return rows[offset: offset + limit]
 
 
 class InMemoryAgentRepository:
@@ -168,7 +182,7 @@ class InMemoryAgentRepository:
     async def update_last_seen(self, agent_id: str) -> None:
         agent = self._agents.get(agent_id)
         if agent is not None:
-            agent.last_seen_at = datetime.now()
+            agent.last_seen_at = datetime.now(UTC)
 
     async def update_trust_stats(
         self,
@@ -255,7 +269,7 @@ class InMemoryConflictRepository:
             conflict.status = status
             conflict.winning_fact_id = winning_fact_id
             conflict.resolved_by = resolved_by
-            conflict.resolved_at = datetime.now()
+            conflict.resolved_at = datetime.now(UTC)
             if resolution is not None:
                 conflict.resolution = resolution
 
@@ -314,7 +328,7 @@ class InMemoryEventLog:
         for event in self._events:
             if event.id == event_id:
                 event.delivered = True
-                event.delivered_at = datetime.now()
+                event.delivered_at = datetime.now(UTC)
                 break
 
     async def get_undelivered(self, agent_id: str) -> list[PropagationEvent]:

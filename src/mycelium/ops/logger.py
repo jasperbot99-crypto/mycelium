@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
@@ -26,7 +26,7 @@ class OpsLogEntry:
     fact_id: UUID | None = None
     latency_ms: int | None = None
     detail: dict[str, Any] | None = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @runtime_checkable

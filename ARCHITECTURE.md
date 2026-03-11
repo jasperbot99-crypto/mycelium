@@ -1,7 +1,7 @@
 # Mycelium — Architecture Design
 
 _Version: 0.1 — 2026-03-10_
-_Authors: Tobias + Jasper_
+_Authors: Project Team_
 _Status: Draft_
 _Companion to: [SPEC.md](./SPEC.md) (what/why) — this document covers the HOW._
 

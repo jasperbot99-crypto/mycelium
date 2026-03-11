@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -37,6 +37,10 @@ def runner(fact_repo: InMemoryFactRepository, config: DecayConfig) -> DecayCycle
 
 
 def _make_fact(
+    subject: str = "general-note",
+    predicate: str = "has_status",
+    tags: list[str] | None = None,
+    metadata: dict[str, object] | None = None,
     confidence: float = 0.6,
     trust_score: float = 0.5,
     verification_status: VerificationStatus = VerificationStatus.UNVERIFIED,
@@ -46,16 +50,18 @@ def _make_fact(
 ) -> Fact:
     return Fact(
         id=uuid4(),
-        content=FactContent(subject="test-service", predicate="has_status", object="healthy"),
+        content=FactContent(subject=subject, predicate=predicate, object="healthy"),
         source_agent_id="test-agent",
         source_type=SourceType.AGENT_EXTRACTION,
         confidence=confidence,
         trust_score=trust_score,
-        valid_from=created_at or datetime.now(),
-        created_at=created_at or datetime.now(),
+        valid_from=created_at or datetime.now(UTC),
+        created_at=created_at or datetime.now(UTC),
         verification_status=verification_status,
         last_accessed_at=last_accessed_at,
         last_verified_at=last_verified_at,
+        tags=tags or [],
+        metadata=metadata or {},
     )
 
 
@@ -66,6 +72,7 @@ class TestDecayCycleRunner:
         assert result.facts_scanned == 0
         assert result.expired_low_confidence == 0
         assert result.expired_failed_verification == 0
+        assert result.expired_ttl == 0
         assert result.marked_stale == 0
 
     @pytest.mark.asyncio
@@ -132,10 +139,80 @@ class TestDecayCycleRunner:
         assert result.expired_failed_verification == 0
 
     @pytest.mark.asyncio
+    async def test_trading_fact_expires_on_ttl(
+        self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
+    ) -> None:
+        created = datetime.now(UTC) - timedelta(hours=6)
+        fact = _make_fact(
+            subject="eurusd position",
+            tags=["trading.positions"],
+            created_at=created,
+        )
+        await fact_repo.insert(fact)
+
+        result = await runner.run_cycle(now=datetime.now(UTC))
+        assert result.expired_ttl == 1
+        stored = await fact_repo.get_by_id(fact.id)
+        assert stored is not None
+        assert not stored.is_active
+
+    @pytest.mark.asyncio
+    async def test_service_status_expires_on_ttl(
+        self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
+    ) -> None:
+        created = datetime.now(UTC) - timedelta(hours=30)
+        fact = _make_fact(
+            subject="api-orders",
+            predicate="has_status",
+            created_at=created,
+        )
+        await fact_repo.insert(fact)
+
+        result = await runner.run_cycle(now=datetime.now(UTC))
+        assert result.expired_ttl == 1
+        stored = await fact_repo.get_by_id(fact.id)
+        assert stored is not None
+        assert not stored.is_active
+
+    @pytest.mark.asyncio
+    async def test_architecture_fact_has_no_ttl(
+        self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
+    ) -> None:
+        created = datetime.now(UTC) - timedelta(days=7)
+        fact = _make_fact(
+            subject="architecture decision record",
+            tags=["architecture"],
+            created_at=created,
+        )
+        await fact_repo.insert(fact)
+
+        result = await runner.run_cycle(now=datetime.now(UTC))
+        assert result.expired_ttl == 0
+        stored = await fact_repo.get_by_id(fact.id)
+        assert stored is not None
+        assert stored.is_active
+
+    @pytest.mark.asyncio
+    async def test_metadata_ttl_hours_overrides_heuristics(
+        self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
+    ) -> None:
+        created = datetime.now(UTC) - timedelta(hours=3)
+        fact = _make_fact(
+            subject="architecture decision record",
+            tags=["architecture"],
+            metadata={"ttl_hours": 1},
+            created_at=created,
+        )
+        await fact_repo.insert(fact)
+
+        result = await runner.run_cycle(now=datetime.now(UTC))
+        assert result.expired_ttl == 1
+
+    @pytest.mark.asyncio
     async def test_stale_fact_marked(
         self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
     ) -> None:
-        old_date = datetime.now() - timedelta(days=120)
+        old_date = datetime.now(UTC) - timedelta(days=120)
         fact = _make_fact(confidence=0.5, created_at=old_date)
         await fact_repo.insert(fact)
 
@@ -151,8 +228,8 @@ class TestDecayCycleRunner:
     async def test_recently_accessed_not_stale(
         self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
     ) -> None:
-        old_date = datetime.now() - timedelta(days=120)
-        recent_access = datetime.now() - timedelta(days=5)
+        old_date = datetime.now(UTC) - timedelta(days=120)
+        recent_access = datetime.now(UTC) - timedelta(days=5)
         fact = _make_fact(
             confidence=0.5,
             created_at=old_date,
@@ -167,7 +244,7 @@ class TestDecayCycleRunner:
     async def test_already_stale_not_re_marked(
         self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
     ) -> None:
-        old_date = datetime.now() - timedelta(days=120)
+        old_date = datetime.now(UTC) - timedelta(days=120)
         fact = _make_fact(
             confidence=0.5,
             created_at=old_date,
@@ -183,7 +260,7 @@ class TestDecayCycleRunner:
         self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
     ) -> None:
         fact = _make_fact(confidence=0.1)
-        fact.expired_at = datetime.now()  # already expired
+        fact.expired_at = datetime.now(UTC)  # already expired
         await fact_repo.insert(fact)
 
         result = await runner.run_cycle()
@@ -194,7 +271,7 @@ class TestDecayCycleRunner:
         self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
     ) -> None:
         """Low confidence is checked first — fact is expired, not just marked stale."""
-        old_date = datetime.now() - timedelta(days=120)
+        old_date = datetime.now(UTC) - timedelta(days=120)
         fact = _make_fact(confidence=0.1, created_at=old_date)
         await fact_repo.insert(fact)
 
@@ -222,7 +299,7 @@ class TestDecayCycleRunner:
         self, runner: DecayCycleRunner, fact_repo: InMemoryFactRepository
     ) -> None:
         """Mix of healthy, low-confidence, failed, and stale facts."""
-        old_date = datetime.now() - timedelta(days=120)
+        old_date = datetime.now(UTC) - timedelta(days=120)
 
         await fact_repo.insert(_make_fact(confidence=0.8))  # healthy
         await fact_repo.insert(_make_fact(confidence=0.05))  # low confidence

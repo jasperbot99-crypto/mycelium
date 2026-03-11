@@ -1,5 +1,5 @@
 # Agent Memory & Coordination — Research Document
-_Startet: 2026-03-10, Tobias + Jasper_
+_Startet: 2026-03-10_
 _Status: Research phase_
 
 ---
@@ -22,11 +22,11 @@ Startpunkt: Jasper-systemet. Slutmål: generelt framework der kan bruges af andr
 Disse er ikke teoretiske problemer — de er observerede failures i vores eget system:
 
 - **Session amnesi**: Agenter starter forfra hver gang. Memory-filer hjælper, men der er altid lag og huller.
-- **Siloed learning**: Jasper-code lærer noget → jasper-trader ved det ikke. Tobias korrigerer main → jasper-planner ved det ikke.
+- **Siloed learning**: Code-agent lærer noget → trader-agent ved det ikke. Operatøren korrigerer main → planner-agent ved det ikke.
 - **Stale state**: Research rapporterer ting som broken der er fixet. Ingen agent tjekker mod faktiske system-state.
-- **Hallucineret fakta**: COMM2IG "Ansøgt 9/3" — agent rapporterede noget Tobias aldrig havde gjort som om det var sandt.
+- **Hallucineret fakta**: Agent rapporterede en handling som gennemført, selvom operatøren aldrig havde gjort det.
 - **Soft guidance virker ikke**: Regler i filer overholdes ikke systematisk. Kun hard enforcement (plugins/hooks) virker.
-- **Intra-session amnesi**: Tobias siger X → agent reverterer til gammel model 5 beskeder senere.
+- **Intra-session amnesi**: Operatøren siger X → agent reverterer til gammel model 5 beskeder senere.
 - **Ingen måling**: Vi ved ikke om memory-systemet faktisk hjælper. Ingen metrics.
 
 ---

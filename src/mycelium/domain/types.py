@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -106,6 +106,15 @@ class VerificationMethod(StrEnum):
     MANUAL_REVIEW = "manual_review"
 
 
+class FeedbackSignal(StrEnum):
+    """Explicit feedback signal for a fact."""
+
+    HELPFUL = "helpful"
+    IRRELEVANT = "irrelevant"
+    OUTDATED = "outdated"
+    WRONG = "wrong"
+
+
 # --- Value Objects ---
 
 
@@ -151,6 +160,22 @@ class ActiveContext:
 
 
 @dataclass(frozen=True)
+class RankingProfile:
+    """Agent-aware ranking profile used by QueryEngine."""
+
+    similarity_weight: float = 0.5
+    trust_weight: float = 0.25
+    recency_weight: float = 0.25
+    recency_half_life_hours: int = 168
+    verification_boost: float = 0.15
+    stale_penalty: float = 0.10
+    failed_penalty: float = 0.25
+    unresolved_conflict_penalty: float = 0.10
+    no_access_stale_penalty: float = 0.05
+    no_access_grace_hours: int = 336
+
+
+@dataclass(frozen=True)
 class RejectionReason:
     """Returned when ingest rejects a fact."""
 
@@ -187,6 +212,18 @@ class CorroborationResult:
 
 
 @dataclass(frozen=True)
+class FeedbackResult:
+    """Result of applying explicit feedback to a fact."""
+
+    fact_id: UUID
+    signal: FeedbackSignal
+    confidence_delta: float
+    trust_delta: float
+    verification_status: VerificationStatus
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class ConflictResolutionResult:
     """Result of resolving a conflict in Phase 4."""
 
@@ -220,7 +257,7 @@ class Fact:
     # Bi-temporal model
     valid_from: datetime
     valid_until: datetime | None = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expired_at: datetime | None = None
 
     # Provenance
@@ -284,7 +321,7 @@ class AgentRecord:
     # Lifecycle
     last_seen_at: datetime | None = None
     last_ack_event_id: UUID | None = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     metadata: dict[str, object] = field(default_factory=_object_dict)
 
@@ -299,7 +336,7 @@ class Subscription:
     priority: Priority
     min_confidence: float = 0.0
     source_types: list[SourceType] | None = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def matches_tags(self, tags: list[str]) -> bool:
         """Check if this subscription's topic matches any of the given tags.
@@ -336,7 +373,7 @@ class PropagationEvent:
     priority: Priority
     delivered: bool = False
     delivered_at: datetime | None = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     sequence_num: int = 0
 
     # Populated when loading full event (not always present)
@@ -353,7 +390,7 @@ class Conflict:
     status: ConflictStatus
     resolution: dict[str, object] | None = None
     winning_fact_id: UUID | None = None
-    detected_at: datetime = field(default_factory=datetime.now)
+    detected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     resolved_at: datetime | None = None
     resolved_by: str | None = None
     metadata: dict[str, object] = field(default_factory=_object_dict)

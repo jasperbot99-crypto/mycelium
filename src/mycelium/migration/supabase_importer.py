@@ -8,7 +8,7 @@ Requires: asyncpg connection to Supabase Postgres (direct connection, not REST A
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from mycelium.domain.types import FactContent, SourceType
@@ -147,7 +147,7 @@ async def import_supabase_learnings(
                 initial_confidence=MIGRATION_CONFIDENCE,
                 metadata={
                     "migrated_from": MigrationSource.SUPABASE.value,
-                    "migration_date": datetime.now().isoformat(),
+                    "migration_date": datetime.now(UTC).isoformat(),
                     "original_id": record.original_id,
                 },
             )
@@ -167,7 +167,7 @@ async def import_supabase_learnings(
                 f"Record {record.original_id} failed: {e}"
             )
 
-    result.finished_at = datetime.now()
+    result.finished_at = datetime.now(UTC)
 
     if ops_logger is not None:
         await ops_logger.log(

@@ -1,6 +1,6 @@
 # Mycelium — TODO
 
-_Updated: 2026-03-10_
+_Updated: 2026-03-11_
 
 ## Phase 1: Core Memory Layer
 
@@ -205,3 +205,31 @@ _Deferred from Phase 1 core — must complete before Phase 2._
 - [x] Migration guide (`docs/MIGRATION.md`)
 - [x] TokenProvider auth abstraction for embedding + LLM + memory-file extraction
 - [x] Test gap additions: restart/replay recovery, 3-agent conflict handling, ranking order, trust evolution
+- [x] UTC datetime normalization across pipelines/storage/tests (naive vs aware crash fix)
+- [x] End-to-end integration test: plugin HTTP (`/ingest/raw`) -> server -> Postgres query
+- [x] Ops baseline artifacts: nightly extraction launchd template, healthcheck monitor, log rotation scripts
+
+## Improvement Strategy — Phase 0 Foundations (2026-03-11)
+
+- [x] Daily notes extraction pipeline scaffold (`src/mycelium/extraction/daily_notes.py`)
+- [x] Incremental extraction watermark storage (`mycelium.extraction_state`)
+- [x] Manual extraction trigger endpoint (`POST /v1/extraction/run`)
+- [x] Nightly extraction script (`ops/nightly-extraction.sh`)
+- [x] Expire legacy `memory_file` migration facts as part of extraction run
+
+## Improvement Strategy — Follow-up Progress (2026-03-11)
+
+- [x] Query ranking uses verification signal and unresolved conflict penalty
+- [x] Subject-clustered query consolidation (default one top fact per subject)
+- [x] Agent context boost is applied in query ranking
+- [x] Fact listing endpoint (`GET /v1/agents/{agent_id}/facts`) with pagination
+- [x] Semantic subscription fallback in propagation (`>= 0.6` similarity)
+- [x] Real-time correction bridge hardened in connector (explicit correction formats, no dual ingest)
+- [x] Agent-aware ranking profiles (role-specific recency/trust/similarity balance)
+- [x] Access-weighted stale penalty for unread old facts in query ranking
+- [x] Propagation priority escalation + normalized entity matching (`EUR/USD` ↔ `EURUSD`)
+- [x] Fact-type TTL decay policy (trading 4h, service status 24h, architecture persistent)
+- [x] Ingest temporal supersede-vs-contradict handling (same subject/predicate updates)
+- [x] Explicit feedback API (`POST /v1/agents/{agent_id}/feedback`) with fact score/trust updates
+- [x] VerificationCycleRunner (automated verification of unverified facts)
+- [x] Semantic dedup at ingest (`>0.95` + same subject/predicate/object => no new fact)

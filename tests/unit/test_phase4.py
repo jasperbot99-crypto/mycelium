@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -84,8 +84,8 @@ async def test_conflict_resolution_prefers_higher_source_authority() -> None:
     conflict_repo = InMemoryConflictRepository()
     relation_repo = InMemoryRelationRepository()
 
-    older = _make_fact(source_type=SourceType.AGENT_INFERENCE, valid_from=datetime.now())
-    newer = _make_fact(source_type=SourceType.HUMAN_CORRECTION, valid_from=datetime.now())
+    older = _make_fact(source_type=SourceType.AGENT_INFERENCE, valid_from=datetime.now(UTC))
+    newer = _make_fact(source_type=SourceType.HUMAN_CORRECTION, valid_from=datetime.now(UTC))
     await fact_repo.insert(older)
     await fact_repo.insert(newer)
 
@@ -135,12 +135,12 @@ async def test_conflict_resolution_uses_causal_order_when_authority_is_equal() -
 
     fact_a = _make_fact(
         source_type=SourceType.AGENT_EXTRACTION,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
         metadata={"version_vector": {"agent-a": 1}},
     )
     fact_b = _make_fact(
         source_type=SourceType.AGENT_EXTRACTION,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
         metadata={"version_vector": {"agent-a": 2}},
     )
     await fact_repo.insert(fact_a)
@@ -173,7 +173,7 @@ async def test_conflict_resolution_escalates_ambiguous_without_llm() -> None:
     conflict_repo = InMemoryConflictRepository()
     relation_repo = InMemoryRelationRepository()
 
-    base_time = datetime.now()
+    base_time = datetime.now(UTC)
     fact_a = _make_fact(source_type=SourceType.AGENT_EXTRACTION, valid_from=base_time)
     fact_b = _make_fact(
         source_type=SourceType.AGENT_EXTRACTION,
@@ -208,7 +208,7 @@ async def test_conflict_resolution_accepts_confident_llm_decision() -> None:
     conflict_repo = InMemoryConflictRepository()
     relation_repo = InMemoryRelationRepository()
 
-    base_time = datetime.now()
+    base_time = datetime.now(UTC)
     fact_a = _make_fact(source_type=SourceType.AGENT_EXTRACTION, valid_from=base_time)
     fact_b = _make_fact(
         source_type=SourceType.AGENT_EXTRACTION,
@@ -244,7 +244,7 @@ async def test_conflict_resolution_handles_three_agent_disagreement() -> None:
     conflict_repo = InMemoryConflictRepository()
     relation_repo = InMemoryRelationRepository()
 
-    t0 = datetime.now()
+    t0 = datetime.now(UTC)
     fact_a = Fact(
         id=uuid4(),
         content=FactContent(subject="service-x", predicate="has_status", object="down"),
@@ -308,7 +308,7 @@ async def test_provenance_pipeline_traces_derived_from_chain() -> None:
         source_type=SourceType.AGENT_EXTRACTION,
         confidence=0.6,
         trust_score=0.5,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
     )
     child = Fact(
         id=uuid4(),
@@ -317,7 +317,7 @@ async def test_provenance_pipeline_traces_derived_from_chain() -> None:
         source_type=SourceType.HUMAN_CORRECTION,
         confidence=0.8,
         trust_score=0.8,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
         derived_from=[root.id],
         supersedes=root.id,
     )

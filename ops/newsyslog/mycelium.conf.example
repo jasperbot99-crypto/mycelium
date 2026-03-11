@@ -1,0 +1,3 @@
+# Example newsyslog entry for macOS (copy into /etc/newsyslog.d/mycelium.conf)
+# logfilename                    owner:group mode count size when flags [/pid_file] [sig_num]
+/Users/USERNAME/Library/Logs/mycelium/*.log  USER:staff  644  14  *    @T00  J

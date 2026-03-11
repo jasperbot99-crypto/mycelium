@@ -13,9 +13,26 @@ from mycelium.config import MyceliumConfig, SubscriptionConfig
 from mycelium.domain.types import Priority, SourceType, Subscription
 from mycelium.embeddings.openai import OpenAIEmbeddingProvider
 from mycelium.embeddings.protocols import EmbeddingProvider  # noqa: TC001
+from mycelium.extraction.daily_notes import (
+    DailyNotesExtractionResult,
+    DailyNotesExtractor,
+    DailyNotesWorkspaceConfig,
+    OpenAIDailyNotesFactExtractor,
+    PostgresExtractionStateStore,
+    default_daily_notes_workspaces,
+)
 from mycelium.ops.logger import NullOpsLogger, OpsLogger
 from mycelium.pipelines.decay import DecayConfig, DecayCycleRunner
 from mycelium.pipelines.sweeper import ContradictionSweeper
+from mycelium.pipelines.verification import VerificationPipeline
+from mycelium.pipelines.verification_cycle import (
+    VerificationCycleConfig,
+    VerificationCycleRunner,
+)
+from mycelium.pipelines.verification_providers import (
+    ConfidenceThresholdProvider,
+    TemporalConsistencyProvider,
+)
 from mycelium.storage.postgres.repositories import (
     PostgresAgentRepository,
     PostgresConflictRepository,
@@ -46,6 +63,7 @@ class ServerState:
 
         self.sweeper: ContradictionSweeper | None = None
         self.decay_runner: DecayCycleRunner | None = None
+        self.verification_runner: VerificationCycleRunner | None = None
 
         self._clients: dict[str, MyceliumClient] = {}
 
@@ -77,9 +95,27 @@ class ServerState:
             config=DecayConfig(cycle_interval_hours=self.config.decay_cycle_interval_hours),
             ops_logger=self.ops_logger,
         )
+        verification_pipeline = VerificationPipeline(
+            fact_repo=self.fact_repo,
+            agent_repo=self.agent_repo,
+            ops_logger=self.ops_logger,
+        )
+        self.verification_runner = VerificationCycleRunner(
+            fact_repo=self.fact_repo,
+            verification_pipeline=verification_pipeline,
+            providers=[
+                ConfidenceThresholdProvider(),
+                TemporalConsistencyProvider(),
+            ],
+            config=VerificationCycleConfig(
+                cycle_interval_hours=self.config.verification_cycle_interval_hours,
+            ),
+            ops_logger=self.ops_logger,
+        )
 
         await self.sweeper.start()
         await self.decay_runner.start()
+        await self.verification_runner.start()
 
     async def shutdown(self) -> None:
         for agent_id in list(self._clients.keys()):
@@ -91,6 +127,8 @@ class ServerState:
             await self.sweeper.stop()
         if self.decay_runner is not None:
             await self.decay_runner.stop()
+        if self.verification_runner is not None:
+            await self.verification_runner.stop()
 
         if self.embedding_provider is not None:
             close_fn = getattr(self.embedding_provider, "close", None)
@@ -178,6 +216,96 @@ class ServerState:
             for sub in subs
         ]
         return await self.subscription_repo.sync_subscriptions(agent_id, mapped)
+
+    async def run_daily_notes_extraction(
+        self,
+        *,
+        workspaces: list[DailyNotesWorkspaceConfig] | None = None,
+        expire_memory_migration_facts: bool = True,
+    ) -> DailyNotesExtractionResult:
+        assert self.pool is not None
+        extractor_client_id = "mycelium-daily-extractor"
+        existing = self._clients.get(extractor_client_id)
+        created_client = existing is None or not existing.connected
+        client = await self.connect_agent(extractor_client_id, role="system")
+
+        state_store = PostgresExtractionStateStore(self.pool)
+        await state_store.ensure_table()
+
+        workspace_configs = workspaces
+        if workspace_configs is None:
+            configured = self.config.daily_note_workspaces
+            workspace_configs = (
+                [
+                    DailyNotesWorkspaceConfig(
+                        workspace_key=item.workspace_key,
+                        glob_pattern=item.glob_pattern,
+                        source_agent_id=item.source_agent_id,
+                        correction_authority=item.correction_authority,
+                    )
+                    for item in configured
+                ]
+                if configured
+                else default_daily_notes_workspaces()
+            )
+
+        if not workspace_configs:
+            workspace_configs = [
+                DailyNotesWorkspaceConfig(
+                    workspace_key=item.workspace_key,
+                    glob_pattern=item.glob_pattern,
+                    source_agent_id=item.source_agent_id,
+                    correction_authority=item.correction_authority,
+                )
+                for item in default_daily_notes_workspaces()
+            ]
+
+        fact_extractor = OpenAIDailyNotesFactExtractor(
+            api_key=self.config.openai_api_key,
+            token_provider=self.config.openai_token_provider,
+        )
+        runner = DailyNotesExtractor(
+            workspaces=workspace_configs,
+            state_store=state_store,
+            fact_extractor=fact_extractor,
+        )
+
+        try:
+            return await runner.run(
+                client,
+                pool=self.pool,
+                expire_memory_migration_facts=expire_memory_migration_facts,
+            )
+        finally:
+            await fact_extractor.close()
+            if created_client:
+                await self.disconnect_agent(extractor_client_id)
+
+    async def list_agent_facts(
+        self,
+        agent_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        active_only: bool = True,
+    ) -> list[Any]:
+        assert self.fact_repo is not None
+        list_for_agent = getattr(self.fact_repo, "list_for_agent", None)
+        if callable(list_for_agent):
+            return await list_for_agent(
+                agent_id,
+                limit=limit,
+                offset=offset,
+                active_only=active_only,
+            )
+
+        if active_only:
+            rows = await self.fact_repo.find_all_active()
+        else:
+            rows = await self.fact_repo.find_all_active()
+        filtered = [fact for fact in rows if fact.source_agent_id == agent_id]
+        filtered.sort(key=lambda fact: fact.created_at, reverse=True)
+        return filtered[offset: offset + limit]
 
     def _build_embedding_provider(self) -> EmbeddingProvider:
         if self.config.embedding_provider is not None:

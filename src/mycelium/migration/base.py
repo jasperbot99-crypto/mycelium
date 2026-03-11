@@ -10,7 +10,7 @@ All migrated facts:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 
@@ -54,7 +54,7 @@ class MigrationResult:
     skipped: int = 0
     failed: int = 0
     errors: list[str] = field(default_factory=_string_list)
-    started_at: datetime = field(default_factory=datetime.now)
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
 
     @property

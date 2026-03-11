@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID, uuid4
 
@@ -291,7 +291,7 @@ class ConflictResolutionPipeline:
 
             losing_fact = await self._fact_repo.get_by_id(losing_fact_id)
             if losing_fact is not None and losing_fact.is_active:
-                await self._fact_repo.set_valid_until(losing_fact_id, datetime.now())
+                await self._fact_repo.set_valid_until(losing_fact_id, datetime.now(UTC))
 
             await self._ensure_supersedes_relation(winning_fact_id, losing_fact_id)
 

@@ -24,7 +24,7 @@
 **Severity:** Critical
 
 ### What Happened
-jasper-trader had equity hardcoded at $10,000 for 3 weeks. Real Capital.com balance was $1,077.64. All position sizing was wrong by ~10x. Tobias caught it manually.
+jasper-trader had equity hardcoded at $10,000 for 3 weeks. Real Capital.com balance was $1,077.64. All position sizing was wrong by ~10x. The operator caught it manually.
 
 ### Root Cause
 jasper-code ingested assumption "equity = 10000" early in setup. jasper-trader never challenged it. No agent had ground-truth broker balance.
@@ -76,7 +76,7 @@ Decay/staleness is designed exactly for this case: unchallenged assumptions that
 **Severity:** High
 
 ### What Happened
-Supabase hit 153% capacity (732MB/500MB). Root cause: every market tick triggered triple-write: market_data + trading_lab_events + agent_events via trigger chain. Nobody knew until Tobias checked manually.
+Supabase hit 153% capacity (732MB/500MB). Root cause: every market tick triggered triple-write: market_data + trading_lab_events + agent_events via trigger chain. Nobody knew until the operator checked manually.
 
 ### Root Cause
 jasper-code ingested "event pipeline is working" (true). jasper-trader ingested "market data is being stored" (true). No agent connected these two facts to produce "we are writing 3x per tick" (the dangerous compound fact).
@@ -160,7 +160,7 @@ The conflict detection mechanism catches the contradiction between normal histor
 **Severity:** Medium
 
 ### What Happened
-jasper-research and jasper-planner both found Mascot AM Fyn independently, on different days. Same job lead, double alert to Tobias. Coordination overhead.
+jasper-research and jasper-planner both found Mascot AM Fyn independently, on different days. Same job lead, double alert to the operator. Coordination overhead.
 
 ### Root Cause
 No shared memory — each agent searched independently with no awareness of what others had found.

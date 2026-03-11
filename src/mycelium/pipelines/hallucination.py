@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mycelium.domain.types import AgentRecord, FactContent, RejectionReason, SourceType
+from mycelium.pipelines.parsing import looks_like_garbage
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,14 @@ def check_hallucination(
                 f" but claiming confidence={claimed_confidence:.2f}"
             ),
             confidence_penalty=0.25,
+        ))
+
+    # 5. Garbage content in object field (JSON fragments, credentials, etc.)
+    if looks_like_garbage(content.object):
+        flags.append(HallucinationFlag(
+            code="garbage_content",
+            message="object field contains garbage content (JSON, escaped strings, or credentials)",
+            confidence_penalty=1.0,
         ))
 
     return HallucinationCheckResult(flags=flags)

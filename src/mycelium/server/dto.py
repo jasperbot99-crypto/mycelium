@@ -19,6 +19,8 @@ from mycelium.domain.types import (
     CorroborationResult,
     Fact,
     FactContent,
+    FeedbackResult,
+    FeedbackSignal,
     Priority,
     PropagationEvent,
     SourceType,
@@ -28,6 +30,7 @@ from mycelium.domain.types import (
     VerificationResult,
     VerificationStatus,
 )
+from mycelium.extraction.daily_notes import DailyNotesWorkspaceConfig
 from mycelium.pipelines.ingest import IngestResult  # noqa: TC001
 from mycelium.pipelines.provenance import ProvenanceEntry  # noqa: TC001
 from mycelium.pipelines.query import QueryFilters, QueryResult
@@ -121,6 +124,7 @@ class QueryFiltersDTO(BaseModel):
     subject: str | None = None
     active_only: bool = True
     include_conflicted: bool = True
+    consolidate_by_subject: bool = True
 
     def to_domain(self) -> QueryFilters:
         return QueryFilters(
@@ -130,6 +134,7 @@ class QueryFiltersDTO(BaseModel):
             subject=self.subject,
             active_only=self.active_only,
             include_conflicted=self.include_conflicted,
+            consolidate_by_subject=self.consolidate_by_subject,
         )
 
 
@@ -162,10 +167,83 @@ class IngestResponse(BaseModel):
     corroboration_fact_ids: list[UUID] = Field(default_factory=lambda: list[UUID]())
 
 
+class RawIngestRequest(BaseModel):
+    """Request for /ingest/raw — raw text that the server parses into a fact."""
+
+    raw_text: str
+    source_agent_id: str | None = None
+
+
+class RawIngestResponse(BaseModel):
+    """Response for /ingest/raw — extends IngestResponse with parsed fields."""
+
+    accepted: bool
+    fact: FactDTO | None = None
+    rejection: RejectionDTO | None = None
+    contradiction_fact_ids: list[UUID] = Field(default_factory=lambda: list[UUID]())
+    corroboration_fact_ids: list[UUID] = Field(default_factory=lambda: list[UUID]())
+    parsed_subject: str | None = None
+    parsed_predicate: str | None = None
+
+
+class RawQueryContext(BaseModel):
+    """Optional raw context for query — server extracts entities to build question."""
+
+    task_name: str | None = None
+    prompt: str | None = None
+
+
 class QueryRequest(BaseModel):
-    question: str
+    question: str = ""
     filters: QueryFiltersDTO | None = None
     limit: int | None = None
+    raw_context: RawQueryContext | None = None
+
+
+class ExtractionWorkspaceDTO(BaseModel):
+    workspace_key: str
+    glob_pattern: str
+    source_agent_id: str
+    correction_authority: bool = False
+
+    def to_domain(self) -> DailyNotesWorkspaceConfig:
+        return DailyNotesWorkspaceConfig(
+            workspace_key=self.workspace_key,
+            glob_pattern=self.glob_pattern,
+            source_agent_id=self.source_agent_id,
+            correction_authority=self.correction_authority,
+        )
+
+
+class ExtractionRunRequest(BaseModel):
+    workspaces: list[ExtractionWorkspaceDTO] | None = None
+    expire_memory_migration_facts: bool = True
+
+
+class WorkspaceExtractionStatsDTO(BaseModel):
+    workspace_key: str
+    files_seen: int
+    files_processed: int
+    facts_extracted: int
+    facts_ingested: int
+    facts_skipped: int
+    facts_failed: int
+
+
+class ExtractionRunResponse(BaseModel):
+    started_at: datetime
+    finished_at: datetime | None
+    expired_memory_migration_facts: int
+    total_files_seen: int
+    total_files_processed: int
+    total_facts_extracted: int
+    total_facts_ingested: int
+    total_facts_skipped: int
+    total_facts_failed: int
+    workspaces: list[WorkspaceExtractionStatsDTO] = Field(
+        default_factory=lambda: list[WorkspaceExtractionStatsDTO]()
+    )
+    errors: list[str] = Field(default_factory=lambda: list[str]())
 
 
 class CorrectRequest(BaseModel):
@@ -184,6 +262,12 @@ class VerifyRequest(BaseModel):
 class CorroborateRequest(BaseModel):
     fact_id: UUID
     corroborating_fact_id: UUID
+    reason: str | None = None
+
+
+class FeedbackRequest(BaseModel):
+    fact_id: UUID
+    signal: FeedbackSignal
     reason: str | None = None
 
 
@@ -252,6 +336,15 @@ class CorroborationResultDTO(BaseModel):
     trust_delta: float
     relation_created: bool
     verified_at: datetime
+
+
+class FeedbackResultDTO(BaseModel):
+    fact_id: UUID
+    signal: FeedbackSignal
+    confidence_delta: float
+    trust_delta: float
+    verification_status: VerificationStatus
+    reason: str | None
 
 
 class ConflictResolutionResultDTO(BaseModel):
@@ -376,6 +469,17 @@ def corroboration_to_dto(result: CorroborationResult) -> CorroborationResultDTO:
         trust_delta=result.trust_delta,
         relation_created=result.relation_created,
         verified_at=result.verified_at,
+    )
+
+
+def feedback_to_dto(result: FeedbackResult) -> FeedbackResultDTO:
+    return FeedbackResultDTO(
+        fact_id=result.fact_id,
+        signal=result.signal,
+        confidence_delta=result.confidence_delta,
+        trust_delta=result.trust_delta,
+        verification_status=result.verification_status,
+        reason=result.reason,
     )
 
 

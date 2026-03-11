@@ -14,7 +14,7 @@ import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -43,6 +43,12 @@ class DecayConfig:
     cycle_interval_hours: int = 24
     """How often the background loop runs."""
 
+    trading_ttl_hours: int = 4
+    """TTL for trading/market facts."""
+
+    service_status_ttl_hours: int = 24
+    """TTL for service health/status facts."""
+
 
 @dataclass
 class DecayCycleResult:
@@ -51,6 +57,7 @@ class DecayCycleResult:
     facts_scanned: int = 0
     expired_low_confidence: int = 0
     expired_failed_verification: int = 0
+    expired_ttl: int = 0
     marked_stale: int = 0
 
 
@@ -60,6 +67,7 @@ class _Action(Enum):
     NONE = "none"
     EXPIRE_LOW_CONFIDENCE = "expire_low_confidence"
     EXPIRE_FAILED_VERIFICATION = "expire_failed_verification"
+    EXPIRE_TTL = "expire_ttl"
     MARK_STALE = "mark_stale"
 
 
@@ -91,14 +99,14 @@ class DecayCycleRunner:
 
     async def run_cycle(self, now: datetime | None = None) -> DecayCycleResult:
         """Run a single decay cycle against all active facts."""
-        now = now or datetime.now()
+        now = now or datetime.now(UTC)
         stale_cutoff = now - timedelta(days=self._config.stale_days)
 
         active_facts = await self._fact_repo.find_all_active()
         result = DecayCycleResult(facts_scanned=len(active_facts))
 
         for fact in active_facts:
-            action = self._evaluate(fact, stale_cutoff)
+            action = self._evaluate(fact, stale_cutoff, now)
 
             if action == _Action.EXPIRE_LOW_CONFIDENCE:
                 await self._fact_repo.expire(fact.id, expired_at=now)
@@ -107,6 +115,10 @@ class DecayCycleRunner:
             elif action == _Action.EXPIRE_FAILED_VERIFICATION:
                 await self._fact_repo.expire(fact.id, expired_at=now)
                 result.expired_failed_verification += 1
+
+            elif action == _Action.EXPIRE_TTL:
+                await self._fact_repo.expire(fact.id, expired_at=now)
+                result.expired_ttl += 1
 
             elif action == _Action.MARK_STALE:
                 await self._fact_repo.update_verification(
@@ -121,21 +133,23 @@ class DecayCycleRunner:
                 "facts_scanned": result.facts_scanned,
                 "expired_low_confidence": result.expired_low_confidence,
                 "expired_failed_verification": result.expired_failed_verification,
+                "expired_ttl": result.expired_ttl,
                 "marked_stale": result.marked_stale,
             },
         )
 
         logger.info(
-            "Decay cycle: scanned=%d, expired_low=%d, expired_failed=%d, stale=%d",
+            "Decay cycle: scanned=%d, expired_low=%d, expired_failed=%d, expired_ttl=%d, stale=%d",
             result.facts_scanned,
             result.expired_low_confidence,
             result.expired_failed_verification,
+            result.expired_ttl,
             result.marked_stale,
         )
 
         return result
 
-    def _evaluate(self, fact: Fact, stale_cutoff: datetime) -> _Action:
+    def _evaluate(self, fact: Fact, stale_cutoff: datetime, now: datetime) -> _Action:
         """Determine what decay action (if any) applies to a fact."""
         # 1. Low confidence → expire
         if fact.confidence < self._config.min_confidence:
@@ -148,13 +162,56 @@ class DecayCycleRunner:
         ):
             return _Action.EXPIRE_FAILED_VERIFICATION
 
-        # 3. Stale: never accessed/verified and created before cutoff,
+        # 3. Type TTLs
+        ttl_hours = self._infer_ttl_hours(fact)
+        if ttl_hours is not None:
+            ttl_cutoff = fact.valid_from + timedelta(hours=ttl_hours)
+            if now >= ttl_cutoff:
+                return _Action.EXPIRE_TTL
+
+        # 4. Stale: never accessed/verified and created before cutoff,
         #    or last activity before cutoff
         last_activity = fact.last_accessed_at or fact.last_verified_at or fact.created_at
         if last_activity < stale_cutoff and fact.verification_status != VerificationStatus.STALE:
             return _Action.MARK_STALE
 
         return _Action.NONE
+
+    def _infer_ttl_hours(self, fact: Fact) -> int | None:
+        metadata_ttl = fact.metadata.get("ttl_hours")
+        if isinstance(metadata_ttl, int) and metadata_ttl > 0:
+            return metadata_ttl
+        if isinstance(metadata_ttl, float) and metadata_ttl > 0:
+            return int(metadata_ttl)
+
+        tags = {tag.lower() for tag in fact.tags}
+        subject = fact.content.subject.lower()
+        predicate = (fact.predicate_canonical or fact.content.predicate).lower()
+
+        if (
+            any(tag.startswith("trading") for tag in tags)
+            or any(token in tags for token in {"market", "signal", "position", "risk"})
+            or any(token in subject for token in ("eurusd", "btc", "eth", "position", "pnl"))
+        ):
+            return self._config.trading_ttl_hours
+
+        architecture_tagged = (
+            any(tag.startswith("architecture") for tag in tags)
+            or any(tag.startswith("design") for tag in tags)
+            or any(token in subject for token in ("architecture", "adr", "design doc"))
+        )
+        if architecture_tagged:
+            return None
+
+        is_status_predicate = predicate == "has_status"
+        service_like_subject = any(
+            token in subject
+            for token in ("api", "service", "broker", "adapter", "pipeline")
+        )
+        if is_status_predicate and service_like_subject:
+            return self._config.service_status_ttl_hours
+
+        return None
 
     async def start(self) -> None:
         """Start the background decay loop."""

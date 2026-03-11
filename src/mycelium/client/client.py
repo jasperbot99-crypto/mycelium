@@ -5,7 +5,7 @@ Thin facade: validates input, delegates to pipelines, returns results.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -18,8 +18,11 @@ from mycelium.domain.types import (
     CorroborationResult,
     FactContent,
     FactRelation,
+    FeedbackResult,
+    FeedbackSignal,
     Priority,
     PropagationEvent,
+    RankingProfile,
     RelationType,
     SourceType,
     Subscription,
@@ -78,6 +81,7 @@ class MyceliumClient:
         transport: Transport | None = None,
         ops_logger: OpsLogger | None = None,
         conflict_llm_resolver: ConflictLLMResolver | None = None,
+        ranking_profile: RankingProfile | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._role = role
@@ -98,6 +102,7 @@ class MyceliumClient:
         self._transport = transport or config.transport
         self._ops = ops_logger or NullOpsLogger()
         self._conflict_llm_resolver = conflict_llm_resolver
+        self._ranking_profile = ranking_profile
 
         # Pipelines — created on connect()
         self._ingest_pipeline: IngestPipeline | None = None
@@ -156,7 +161,7 @@ class MyceliumClient:
         agent = AgentRecord(
             id=self._agent_id,
             role=self._role,
-            last_seen_at=datetime.now(),
+            last_seen_at=datetime.now(UTC),
         )
         await self._agent_repo.upsert(agent)
 
@@ -191,6 +196,7 @@ class MyceliumClient:
                 event_log=self._event_log,
                 transport=self._transport,
                 agent_repo=self._agent_repo,
+                embedding_provider=self._embedding,
                 ops_logger=self._ops,
             )
 
@@ -305,11 +311,18 @@ class MyceliumClient:
         """
         self._require_connected()
         assert self._query_engine is not None
+        assert self._agent_repo is not None
+
+        agent = await self._agent_repo.get_by_id(self._agent_id)
+        active_context = agent.active_context if agent is not None else None
 
         return await self._query_engine.query(
             question=question,
             filters=filters,
             limit=limit,
+            active_context=active_context,
+            agent_role=agent.role if agent is not None else self._role,
+            ranking_profile=self._ranking_profile,
         )
 
     async def correct(
@@ -446,7 +459,7 @@ class MyceliumClient:
             trust_score=new_trust,
             corroboration_count=new_corroboration_count,
         )
-        verified_at = datetime.now()
+        verified_at = datetime.now(UTC)
         await self._fact_repo.update_verification(
             target.id,
             status=VerificationStatus.VERIFIED,
@@ -478,6 +491,80 @@ class MyceliumClient:
             trust_delta=round(new_trust - target.trust_score, 4),
             relation_created=relation_created,
             verified_at=verified_at,
+        )
+
+    async def feedback(
+        self,
+        fact_id: UUID,
+        signal: FeedbackSignal,
+        reason: str | None = None,
+    ) -> FeedbackResult:
+        """Apply explicit user feedback to a fact."""
+        self._require_connected()
+        assert self._fact_repo is not None
+        assert self._agent_repo is not None
+
+        fact = await self._fact_repo.get_by_id(fact_id)
+        if fact is None:
+            raise ValueError(f"fact not found: {fact_id}")
+
+        confidence_delta = 0.0
+        trust_delta = 0.0
+        verification_status = fact.verification_status
+        contradicted_delta = 0
+
+        if signal == FeedbackSignal.HELPFUL:
+            confidence_delta = 0.05
+            trust_delta = 0.01
+        elif signal == FeedbackSignal.IRRELEVANT:
+            confidence_delta = -0.05
+        elif signal == FeedbackSignal.OUTDATED:
+            confidence_delta = -0.08
+            verification_status = VerificationStatus.STALE
+        elif signal == FeedbackSignal.WRONG:
+            confidence_delta = -0.20
+            trust_delta = -0.03
+            contradicted_delta = 1
+            verification_status = VerificationStatus.FAILED
+
+        new_confidence = round(
+            min(1.0, max(0.0, fact.confidence + confidence_delta)),
+            4,
+        )
+        new_trust = round(min(1.0, max(0.0, fact.trust_score + trust_delta)), 4)
+        await self._fact_repo.update_scores(
+            fact_id,
+            confidence=new_confidence,
+            trust_score=new_trust,
+        )
+        if verification_status != fact.verification_status:
+            await self._fact_repo.update_verification(
+                fact_id,
+                status=verification_status,
+                verified_at=datetime.now(UTC),
+            )
+        if trust_delta != 0.0 or contradicted_delta > 0:
+            await self._agent_repo.update_trust_stats(
+                fact.source_agent_id,
+                facts_contradicted_delta=contradicted_delta,
+                trust_score_delta=trust_delta,
+            )
+
+        await self._ops.log(
+            "feedback",
+            "applied",
+            fact_id=fact_id,
+            agent_id=self._agent_id,
+            detail={"signal": signal.value, "reason": reason},
+        )
+
+        return FeedbackResult(
+            fact_id=fact_id,
+            signal=signal,
+            confidence_delta=confidence_delta,
+            trust_delta=trust_delta,
+            verification_status=verification_status,
+            reason=reason,
         )
 
     async def resolve_conflicts(
@@ -521,7 +608,7 @@ class MyceliumClient:
         agent = await self._agent_repo.get_by_id(self._agent_id)
         if agent is not None:
             agent.active_context = context
-            agent.context_updated_at = datetime.now()
+            agent.context_updated_at = datetime.now(UTC)
             await self._agent_repo.upsert(agent)
 
     # --- Event listener ---

@@ -1,6 +1,6 @@
 """Unit tests for domain types."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -100,7 +100,7 @@ class TestFact:
             "source_type": SourceType.AGENT_EXTRACTION,
             "confidence": 0.6,
             "trust_score": 0.5,
-            "valid_from": datetime.now(),
+            "valid_from": datetime.now(UTC),
         }
         defaults.update(kwargs)
         return Fact(**defaults)  # type: ignore[arg-type]
@@ -110,11 +110,11 @@ class TestFact:
         assert fact.is_active is True
 
     def test_is_active_expired(self) -> None:
-        fact = self._make_fact(expired_at=datetime.now())
+        fact = self._make_fact(expired_at=datetime.now(UTC))
         assert fact.is_active is False
 
     def test_is_active_valid_until_set(self) -> None:
-        fact = self._make_fact(valid_until=datetime.now())
+        fact = self._make_fact(valid_until=datetime.now(UTC))
         assert fact.is_active is False
 
     def test_is_conflicted(self) -> None:
@@ -187,7 +187,7 @@ class TestSubscription:
             source_type=SourceType.AGENT_EXTRACTION,
             confidence=0.9,
             trust_score=0.5,
-            valid_from=datetime.now(),
+            valid_from=datetime.now(UTC),
         )
         fact_low = Fact(
             id=uuid4(),
@@ -196,7 +196,7 @@ class TestSubscription:
             source_type=SourceType.AGENT_EXTRACTION,
             confidence=0.5,
             trust_score=0.5,
-            valid_from=datetime.now(),
+            valid_from=datetime.now(UTC),
         )
         assert sub.passes_filters(fact_high) is True
         assert sub.passes_filters(fact_low) is False
@@ -210,7 +210,7 @@ class TestSubscription:
             source_type=SourceType.HUMAN_CORRECTION,
             confidence=0.5,
             trust_score=0.5,
-            valid_from=datetime.now(),
+            valid_from=datetime.now(UTC),
         )
         fact_agent = Fact(
             id=uuid4(),
@@ -219,7 +219,7 @@ class TestSubscription:
             source_type=SourceType.AGENT_INFERENCE,
             confidence=0.5,
             trust_score=0.5,
-            valid_from=datetime.now(),
+            valid_from=datetime.now(UTC),
         )
         assert sub.passes_filters(fact_human) is True
         assert sub.passes_filters(fact_agent) is False
