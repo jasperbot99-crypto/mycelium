@@ -71,7 +71,7 @@ class OpenAIMemoryFactExtractor:
         token_provider: TokenProvider | None = None,
         *,
         model: str = _DEFAULT_MODEL,
-        timeout: float = 60.0,
+        timeout: float = 180.0,
     ) -> None:
         self._token_provider = build_token_provider(
             api_key,
