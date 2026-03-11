@@ -6,7 +6,7 @@ Run: pytest tests/integration/ -v
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 
 def _make_agent(agent_id: str = "test-agent", role: str = "tester") -> AgentRecord:
-    return AgentRecord(id=agent_id, role=role, last_seen_at=datetime.now())
+    return AgentRecord(id=agent_id, role=role, last_seen_at=datetime.now(UTC))
 
 
 def _make_fact(
@@ -57,8 +57,8 @@ def _make_fact(
         source_type=SourceType.AGENT_EXTRACTION,
         confidence=0.6,
         trust_score=0.5,
-        valid_from=datetime.now(),
-        created_at=datetime.now(),
+        valid_from=datetime.now(UTC),
+        created_at=datetime.now(UTC),
         tags=tags or [],
         embedding=embedding,
     )

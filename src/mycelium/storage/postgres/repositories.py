@@ -7,7 +7,7 @@ Uses asyncpg for async database access.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from mycelium.domain.types import (
@@ -233,7 +233,7 @@ class PostgresFactRepository:
         return [_row_to_fact(row) for row in rows]
 
     async def expire(self, fact_id: UUID, expired_at: datetime | None = None) -> None:
-        ts = expired_at or datetime.now()
+        ts = expired_at or datetime.now(UTC)
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "UPDATE mycelium.facts SET expired_at = $2 WHERE id = $1",
@@ -302,7 +302,7 @@ class PostgresFactRepository:
         status: VerificationStatus,
         verified_at: datetime | None = None,
     ) -> None:
-        ts = verified_at or datetime.now()
+        ts = verified_at or datetime.now(UTC)
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -333,6 +333,26 @@ class PostgresFactRepository:
             rows = await conn.fetch(
                 "SELECT * FROM mycelium.facts WHERE expired_at IS NULL AND valid_until IS NULL"
             )
+        return [_row_to_fact(row) for row in rows]
+
+    async def list_for_agent(
+        self,
+        agent_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        active_only: bool = True,
+    ) -> list[Fact]:
+        query = """
+            SELECT *
+            FROM mycelium.facts
+            WHERE source_agent_id = $1
+        """
+        if active_only:
+            query += " AND expired_at IS NULL AND valid_until IS NULL"
+        query += " ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, agent_id, limit, offset)
         return [_row_to_fact(row) for row in rows]
 
 

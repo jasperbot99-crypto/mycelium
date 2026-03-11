@@ -10,7 +10,7 @@ Facts start at confidence 0.7 (reduced, not yet verified).
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from mycelium.domain.types import FactContent, SourceType
@@ -167,7 +167,7 @@ async def import_lancedb_memories(
                 initial_confidence=MIGRATION_CONFIDENCE,
                 metadata={
                     "migrated_from": MigrationSource.LANCEDB.value,
-                    "migration_date": datetime.now().isoformat(),
+                    "migration_date": datetime.now(UTC).isoformat(),
                     "original_id": record.original_id,
                 },
             )
@@ -187,7 +187,7 @@ async def import_lancedb_memories(
                 f"Record {record.original_id} failed: {e}"
             )
 
-    result.finished_at = datetime.now()
+    result.finished_at = datetime.now(UTC)
 
     if ops_logger is not None:
         await ops_logger.log(

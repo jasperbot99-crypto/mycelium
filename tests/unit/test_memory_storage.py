@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -46,7 +46,7 @@ def _make_fact(
         source_type=SourceType.AGENT_EXTRACTION,
         confidence=0.6,
         trust_score=0.5,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
         tags=tags or [],
         embedding=embedding,
     )
@@ -165,13 +165,13 @@ class TestInMemoryFactRepository:
     @pytest.mark.asyncio
     async def test_find_created_since(self, repo: InMemoryFactRepository) -> None:
         old_fact = _make_fact()
-        old_fact.created_at = datetime.now() - timedelta(hours=2)
+        old_fact.created_at = datetime.now(UTC) - timedelta(hours=2)
         await repo.insert(old_fact)
 
         new_fact = _make_fact()
         await repo.insert(new_fact)
 
-        since = datetime.now() - timedelta(hours=1)
+        since = datetime.now(UTC) - timedelta(hours=1)
         results = await repo.find_created_since(since)
         assert len(results) == 1
         assert results[0].id == new_fact.id

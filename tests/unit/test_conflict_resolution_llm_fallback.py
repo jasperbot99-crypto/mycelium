@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -36,7 +36,7 @@ def _fact(obj: str) -> Fact:
         source_type=SourceType.AGENT_EXTRACTION,
         confidence=0.6,
         trust_score=0.5,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
     )
 
 

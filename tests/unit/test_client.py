@@ -13,6 +13,7 @@ from mycelium.domain.types import (
     Conflict,
     ConflictStatus,
     FactContent,
+    FeedbackSignal,
     RelationType,
     SourceType,
     Urgency,
@@ -309,7 +310,7 @@ class TestMyceliumClient:
             tags=["api.orders"],
         )
         corroborating = await client.ingest(
-            FactContent(subject="api-orders", predicate="has_status", object="healthy"),
+            FactContent(subject="api-orders", predicate="reports_health", object="healthy"),
             SourceType.AGENT_INFERENCE,
             tags=["api.orders"],
         )
@@ -362,6 +363,38 @@ class TestMyceliumClient:
         after = await agent_repo.get_by_id("test-agent")
         assert after is not None
         assert after.trust_score < before_score
+
+    @pytest.mark.asyncio
+    async def test_feedback_wrong_marks_failed_and_penalizes_trust(
+        self,
+        client: MyceliumClient,
+        fact_repo: InMemoryFactRepository,
+        agent_repo: InMemoryAgentRepository,
+    ) -> None:
+        await client.connect()
+        ingested = await client.ingest(
+            FactContent(subject="api-orders", predicate="has_status", object="healthy"),
+            SourceType.AGENT_EXTRACTION,
+        )
+        assert ingested.fact is not None
+
+        result = await client.feedback(
+            ingested.fact.id,
+            signal=FeedbackSignal.WRONG,
+            reason="manual correction from operator",
+        )
+        assert result.signal == FeedbackSignal.WRONG
+        assert result.verification_status == VerificationStatus.FAILED
+        assert result.confidence_delta < 0
+        assert result.trust_delta < 0
+
+        updated_fact = await fact_repo.get_by_id(ingested.fact.id)
+        assert updated_fact is not None
+        assert updated_fact.verification_status == VerificationStatus.FAILED
+
+        source_agent = await agent_repo.get_by_id("test-agent")
+        assert source_agent is not None
+        assert source_agent.facts_contradicted >= 1
 
     @pytest.mark.asyncio
     async def test_trust_evolves_over_many_interactions(

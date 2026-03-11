@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mycelium.memory-extraction.nightly</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /ABS/PATH/TO/mycelium &amp;&amp; ./scripts/nightly_memory_extraction.sh /ABS/PATH/TO/MEMORY.md</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MYCELIUM_DATABASE_URL</key>
+    <string>postgresql://localhost:5432/mycelium_dev</string>
+    <key>OPENAI_API_KEY</key>
+    <string>${OPENAI_API_KEY}</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>23</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/USERNAME/Library/Logs/mycelium/memory-extraction.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/Library/Logs/mycelium/memory-extraction.log</string>
+</dict>
+</plist>

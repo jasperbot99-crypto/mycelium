@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mycelium.logrotate.daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /ABS/PATH/TO/mycelium &amp;&amp; ./scripts/rotate_server_logs.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MYCELIUM_LOG_DIR</key>
+    <string>/Users/USERNAME/Library/Logs/mycelium</string>
+    <key>MYCELIUM_LOG_RETENTION_DAYS</key>
+    <string>14</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>15</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/USERNAME/Library/Logs/mycelium/logrotate.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/Library/Logs/mycelium/logrotate.log</string>
+</dict>
+</plist>

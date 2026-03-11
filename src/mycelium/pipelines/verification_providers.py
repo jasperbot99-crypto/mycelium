@@ -109,9 +109,9 @@ class TemporalConsistencyProvider:
         return VerificationMethod.TEMPORAL_CHECK
 
     async def check(self, fact: Fact) -> VerificationOutcome:
-        from datetime import datetime, timedelta
+        from datetime import UTC, datetime, timedelta
 
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         # Future facts are suspicious
         if fact.valid_from > now + timedelta(hours=1):

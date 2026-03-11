@@ -7,7 +7,7 @@ When Mycelium is live, old sources are frozen, no dual-write.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
 
 from mycelium.migration.base import MigrationResult, MigrationSource
@@ -99,8 +99,8 @@ async def run_migration_plan(
                 source=source_run.source,
                 total_records=len(source_run.records),
                 skipped=len(source_run.records),
-                started_at=datetime.now(),
-                finished_at=datetime.now(),
+                started_at=datetime.now(UTC),
+                finished_at=datetime.now(UTC),
             )
             aggregated.results.append(result)
             continue

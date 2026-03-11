@@ -9,7 +9,7 @@ Flow: validate → hallucination check → resolve predicate → embed
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -180,7 +180,7 @@ class IngestPipeline:
 
         # Run conflict detection
         # Build a temporary fact for comparison (not yet stored)
-        now = datetime.now()
+        now = datetime.now(UTC)
         fact_id = uuid4()
         fact_metadata: dict[str, object] = dict(metadata or {})
         vectors = [normalize_vector(fact_metadata.get("version_vector"))]
@@ -222,6 +222,41 @@ class IngestPipeline:
         corroborations = [
             c for c in conflict_results if c.result == DetectionResult.CORROBORATION
         ]
+        duplicate = self._select_semantic_duplicate(temp_fact, corroborations)
+        if duplicate is not None:
+            existing = duplicate.existing_fact
+            await self._fact_repo.update_scores(
+                existing.id,
+                corroboration_count=existing.corroboration_count + 1,
+            )
+            await self._ops.log(
+                "ingest", "deduplicated",
+                agent_id=source_agent_id,
+                latency_ms=ms_since(t0),
+                detail={
+                    "subject": content.subject,
+                    "existing_fact_id": str(existing.id),
+                    "similarity": round(duplicate.similarity, 4),
+                },
+            )
+            return IngestResult(
+                rejection=RejectionReason(
+                    code="duplicate",
+                    message="Semantic duplicate detected; corroborated existing fact",
+                    existing_fact_id=existing.id,
+                ),
+                corroborations=[duplicate],
+            )
+
+        superseded_facts = [
+            c.existing_fact
+            for c in contradictions
+            if self._is_temporal_supersede(temp_fact, c.existing_fact)
+        ]
+        superseded_fact_ids = {fact.id for fact in superseded_facts}
+        contradictions = [
+            c for c in contradictions if c.existing_fact.id not in superseded_fact_ids
+        ]
 
         # 6. Trust & confidence scoring
         confidence = (
@@ -256,6 +291,7 @@ class IngestPipeline:
             derived_from=derived_from or [],
             metadata=fact_metadata,
             corroboration_count=len(corroborations),
+            supersedes=self._select_primary_supersedes(superseded_facts),
         )
 
         # 8. Store
@@ -308,6 +344,17 @@ class IngestPipeline:
                 corroboration_count=existing.corroboration_count + 1,
             )
 
+        for superseded in superseded_facts:
+            relation = FactRelation(
+                id=uuid4(),
+                source_fact_id=stored_fact.id,
+                target_fact_id=superseded.id,
+                relation_type=RelationType.SUPERSEDES,
+                created_by="system:ingest",
+            )
+            await self._relation_repo.insert(relation)
+            await self._fact_repo.set_valid_until(superseded.id, now)
+
         # 10. Update agent stats
         await self._agent_repo.update_trust_stats(
             source_agent_id,
@@ -343,6 +390,7 @@ class IngestPipeline:
                 "trust_score": trust_score,
                 "contradictions": len(contradictions),
                 "corroborations": len(corroborations),
+                "supersedes": len(superseded_facts),
             },
         )
 
@@ -351,3 +399,68 @@ class IngestPipeline:
             conflicts=contradictions,
             corroborations=corroborations,
         )
+
+    def _is_temporal_supersede(self, new_fact: Fact, existing_fact: Fact) -> bool:
+        same_predicate = False
+        if (
+            new_fact.predicate_canonical is not None
+            and existing_fact.predicate_canonical is not None
+        ):
+            same_predicate = new_fact.predicate_canonical == existing_fact.predicate_canonical
+        if not same_predicate:
+            same_predicate = (
+                new_fact.content.predicate.strip().lower()
+                == existing_fact.content.predicate.strip().lower()
+            )
+
+        if not same_predicate:
+            return False
+
+        object_changed = (
+            new_fact.content.object.strip().lower()
+            != existing_fact.content.object.strip().lower()
+        )
+        if not object_changed:
+            return False
+
+        return new_fact.valid_from >= existing_fact.valid_from
+
+    def _select_primary_supersedes(self, facts: list[Fact]) -> UUID | None:
+        if not facts:
+            return None
+        primary = max(facts, key=lambda item: item.valid_from)
+        return primary.id
+
+    def _select_semantic_duplicate(
+        self,
+        new_fact: Fact,
+        corroborations: list[ConflictCandidate],
+    ) -> ConflictCandidate | None:
+        matches: list[ConflictCandidate] = []
+        for item in corroborations:
+            if item.similarity < self._config.corroboration_threshold:
+                continue
+            existing = item.existing_fact
+            same_predicate = False
+            if (
+                new_fact.predicate_canonical is not None
+                and existing.predicate_canonical is not None
+            ):
+                same_predicate = new_fact.predicate_canonical == existing.predicate_canonical
+            if not same_predicate:
+                same_predicate = (
+                    new_fact.content.predicate.strip().lower()
+                    == existing.content.predicate.strip().lower()
+                )
+            if not same_predicate:
+                continue
+            if (
+                new_fact.content.object.strip().lower()
+                != existing.content.object.strip().lower()
+            ):
+                continue
+            matches.append(item)
+
+        if not matches:
+            return None
+        return max(matches, key=lambda item: item.similarity)

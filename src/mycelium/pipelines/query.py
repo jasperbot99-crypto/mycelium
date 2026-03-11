@@ -7,14 +7,15 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from mycelium.domain.types import RankingProfile
 from mycelium.ops.logger import NullOpsLogger, OpsLogger, ms_since
 
 if TYPE_CHECKING:
     from mycelium.config import MyceliumConfig
-    from mycelium.domain.types import Fact, SourceType
+    from mycelium.domain.types import ActiveContext, Fact, SourceType
     from mycelium.embeddings.protocols import EmbeddingProvider
     from mycelium.storage.protocols import FactRepository
 
@@ -29,6 +30,7 @@ class QueryFilters:
     subject: str | None = None
     active_only: bool = True
     include_conflicted: bool = True
+    consolidate_by_subject: bool = True
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,62 @@ class RankingWeights:
     similarity: float = 0.5
     trust: float = 0.25
     recency: float = 0.25
+    verified_boost: float = 0.15
+    stale_penalty: float = 0.10
+    failed_penalty: float = 0.25
+    unresolved_conflict_penalty: float = 0.10
+
+
+_ROLE_RANKING_PROFILES: dict[str, RankingProfile] = {
+    "trader": RankingProfile(
+        similarity_weight=0.35,
+        trust_weight=0.30,
+        recency_weight=0.35,
+        recency_half_life_hours=24,
+        verification_boost=0.15,
+        stale_penalty=0.10,
+        failed_penalty=0.25,
+        unresolved_conflict_penalty=0.30,
+        no_access_stale_penalty=0.05,
+        no_access_grace_hours=336,
+    ),
+    "code": RankingProfile(
+        similarity_weight=0.55,
+        trust_weight=0.30,
+        recency_weight=0.15,
+        recency_half_life_hours=720,
+        verification_boost=0.15,
+        stale_penalty=0.10,
+        failed_penalty=0.25,
+        unresolved_conflict_penalty=0.10,
+        no_access_stale_penalty=0.05,
+        no_access_grace_hours=336,
+    ),
+    "research": RankingProfile(
+        similarity_weight=0.45,
+        trust_weight=0.25,
+        recency_weight=0.30,
+        recency_half_life_hours=168,
+        verification_boost=0.20,
+        stale_penalty=0.10,
+        failed_penalty=0.25,
+        unresolved_conflict_penalty=0.12,
+        no_access_stale_penalty=0.05,
+        no_access_grace_hours=336,
+    ),
+    "coordinator": RankingProfile(
+        similarity_weight=0.45,
+        trust_weight=0.30,
+        recency_weight=0.25,
+        recency_half_life_hours=168,
+        verification_boost=0.15,
+        stale_penalty=0.10,
+        failed_penalty=0.25,
+        unresolved_conflict_penalty=0.10,
+        no_access_stale_penalty=0.05,
+        no_access_grace_hours=336,
+    ),
+}
 
 
 class QueryEngine:
@@ -74,6 +132,9 @@ class QueryEngine:
         question: str,
         filters: QueryFilters | None = None,
         limit: int | None = None,
+        active_context: ActiveContext | None = None,
+        agent_role: str | None = None,
+        ranking_profile: RankingProfile | None = None,
     ) -> list[QueryResult]:
         """Run the full query pipeline.
 
@@ -144,13 +205,23 @@ class QueryEngine:
             filtered.append((fact, similarity))
 
         # 4. Rank
-        now = datetime.now()
+        now = datetime.now(UTC)
         ranked: list[QueryResult] = []
+        profile = self._resolve_profile(agent_role, ranking_profile)
         for fact, similarity in filtered:
-            score = self._compute_score(fact, similarity, now)
+            score = self._compute_score(
+                fact,
+                similarity,
+                now,
+                profile,
+                active_context=active_context,
+            )
             ranked.append(QueryResult(fact=fact, score=score, similarity=similarity))
 
         ranked.sort(key=lambda r: r.score, reverse=True)
+
+        if filters.consolidate_by_subject:
+            ranked = self._consolidate_by_subject(ranked)
 
         # 5. Record access for returned facts
         final = ranked[:limit]
@@ -164,6 +235,7 @@ class QueryEngine:
                 "question": question,
                 "candidates": len(candidates),
                 "filtered": len(filtered),
+                "ranked": len(ranked),
                 "returned": len(final),
             },
         )
@@ -179,21 +251,113 @@ class QueryEngine:
         return filters.include_conflicted or not fact.is_conflicted
 
     def _compute_score(
-        self, fact: Fact, similarity: float, now: datetime
+        self,
+        fact: Fact,
+        similarity: float,
+        now: datetime,
+        profile: RankingProfile,
+        *,
+        active_context: ActiveContext | None = None,
     ) -> float:
         """Compute weighted relevance score.
 
         Score = w_sim * similarity + w_trust * trust_score + w_recency * recency_factor
         """
-        w = self._weights
-
         # Recency factor: exponential decay from valid_from
         age_hours = max(0, (now - fact.valid_from).total_seconds() / 3600)
-        # Half-life of 168 hours (1 week) — facts lose half their recency value per week
-        recency = 0.5 ** (age_hours / 168)
-
-        return (
-            w.similarity * similarity
-            + w.trust * fact.trust_score
-            + w.recency * recency
+        recency = 0.5 ** (age_hours / max(1, profile.recency_half_life_hours))
+        score = (
+            profile.similarity_weight * similarity
+            + profile.trust_weight * fact.trust_score
+            + profile.recency_weight * recency
         )
+
+        if fact.verification_status.value == "verified":
+            score += profile.verification_boost
+        elif fact.verification_status.value == "stale":
+            score -= profile.stale_penalty
+        elif fact.verification_status.value == "failed":
+            score -= profile.failed_penalty
+
+        if fact.is_conflicted:
+            score -= profile.unresolved_conflict_penalty
+
+        if fact.access_count == 0 and age_hours >= profile.no_access_grace_hours:
+            score -= profile.no_access_stale_penalty
+
+        score += self._compute_context_boost(fact, active_context)
+
+        return score
+
+    def _resolve_profile(
+        self,
+        role: str | None,
+        override: RankingProfile | None,
+    ) -> RankingProfile:
+        if override is not None:
+            return override
+        if role is None:
+            return self._default_profile()
+        normalized = role.strip().lower()
+        return _ROLE_RANKING_PROFILES.get(normalized, self._default_profile())
+
+    def _default_profile(self) -> RankingProfile:
+        w = self._weights
+        return RankingProfile(
+            similarity_weight=w.similarity,
+            trust_weight=w.trust,
+            recency_weight=w.recency,
+            recency_half_life_hours=168,
+            verification_boost=w.verified_boost,
+            stale_penalty=w.stale_penalty,
+            failed_penalty=w.failed_penalty,
+            unresolved_conflict_penalty=w.unresolved_conflict_penalty,
+            no_access_stale_penalty=0.05,
+            no_access_grace_hours=336,
+        )
+
+    def _consolidate_by_subject(
+        self,
+        ranked: list[QueryResult],
+    ) -> list[QueryResult]:
+        seen: set[str] = set()
+        consolidated: list[QueryResult] = []
+        for item in ranked:
+            key = item.fact.content.subject.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            consolidated.append(item)
+        return consolidated
+
+    def _compute_context_boost(
+        self,
+        fact: Fact,
+        active_context: ActiveContext | None,
+    ) -> float:
+        if active_context is None or not active_context.entities:
+            return 0.0
+
+        entity_tokens = [item.strip().lower() for item in active_context.entities if item.strip()]
+        if not entity_tokens:
+            return 0.0
+
+        haystacks = [
+            fact.content.subject.lower(),
+            fact.content.object.lower(),
+            (fact.content.context or "").lower(),
+        ]
+        matched = any(
+            token in hay
+            for token in entity_tokens
+            for hay in haystacks
+        )
+        if not matched:
+            return 0.0
+
+        urgency = active_context.urgency.value
+        if urgency == "critical":
+            return 0.30
+        if urgency == "elevated":
+            return 0.20
+        return 0.10

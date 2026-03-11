@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -33,8 +33,8 @@ def _make_fact(
         source_type=SourceType.AGENT_EXTRACTION,
         confidence=confidence,
         trust_score=trust_score,
-        valid_from=valid_from or datetime.now(),
-        created_at=datetime.now(),
+        valid_from=valid_from or datetime.now(UTC),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -112,21 +112,21 @@ class TestTemporalConsistencyProvider:
     @pytest.mark.asyncio
     async def test_recent_fact_verified(self) -> None:
         provider = TemporalConsistencyProvider()
-        fact = _make_fact(valid_from=datetime.now() - timedelta(days=5))
+        fact = _make_fact(valid_from=datetime.now(UTC) - timedelta(days=5))
         outcome = await provider.check(fact)
         assert outcome.status == VerificationStatus.VERIFIED
 
     @pytest.mark.asyncio
     async def test_old_fact_stale(self) -> None:
         provider = TemporalConsistencyProvider(max_age_days=90)
-        fact = _make_fact(valid_from=datetime.now() - timedelta(days=120))
+        fact = _make_fact(valid_from=datetime.now(UTC) - timedelta(days=120))
         outcome = await provider.check(fact)
         assert outcome.status == VerificationStatus.STALE
 
     @pytest.mark.asyncio
     async def test_future_fact_fails(self) -> None:
         provider = TemporalConsistencyProvider()
-        fact = _make_fact(valid_from=datetime.now() + timedelta(days=5))
+        fact = _make_fact(valid_from=datetime.now(UTC) + timedelta(days=5))
         outcome = await provider.check(fact)
         assert outcome.status == VerificationStatus.FAILED
         assert "future" in (outcome.reason or "").lower()
@@ -135,14 +135,14 @@ class TestTemporalConsistencyProvider:
     async def test_slightly_future_ok(self) -> None:
         """Facts within 1 hour tolerance are fine (clock skew)."""
         provider = TemporalConsistencyProvider()
-        fact = _make_fact(valid_from=datetime.now() + timedelta(minutes=30))
+        fact = _make_fact(valid_from=datetime.now(UTC) + timedelta(minutes=30))
         outcome = await provider.check(fact)
         assert outcome.status == VerificationStatus.VERIFIED
 
     @pytest.mark.asyncio
     async def test_custom_max_age(self) -> None:
         provider = TemporalConsistencyProvider(max_age_days=30)
-        fact = _make_fact(valid_from=datetime.now() - timedelta(days=45))
+        fact = _make_fact(valid_from=datetime.now(UTC) - timedelta(days=45))
         outcome = await provider.check(fact)
         assert outcome.status == VerificationStatus.STALE
 

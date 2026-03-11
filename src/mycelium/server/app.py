@@ -11,6 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from mycelium.config import MyceliumConfig, SubscriptionConfig
+from mycelium.pipelines.parsing import (
+    extract_query_from_context,
+    looks_like_garbage,
+    parse_memory_store_to_fact,
+)
 from mycelium.server.auth import auth_dependency_factory
 from mycelium.server.dto import (
     AckEventRequest,
@@ -23,11 +28,18 @@ from mycelium.server.dto import (
     CorroborationResultDTO,
     ErrorResponse,
     EventDTO,
+    ExtractionRunRequest,
+    ExtractionRunResponse,
+    FeedbackRequest,
+    FeedbackResultDTO,
     HealthResponse,
     IngestRequest,
     IngestResponse,
     QueryRequest,
     QueryResultDTO,
+    RawIngestRequest,
+    RawIngestResponse,
+    RejectionDTO,
     ReplayRequest,
     ResolveConflictsRequest,
     UpdateContextRequest,
@@ -35,10 +47,13 @@ from mycelium.server.dto import (
     VerificationResultDTO,
     VerifyRequest,
     VersionResponse,
+    WorkspaceExtractionStatsDTO,
     conflict_resolution_to_dto,
     conflict_to_dto,
     corroboration_to_dto,
     event_to_dto,
+    fact_to_dto,
+    feedback_to_dto,
     ingest_result_to_dto,
     provenance_to_dto,
     query_result_to_dto,
@@ -133,15 +148,131 @@ def create_app(config: MyceliumConfig, state: ServerState | None = None) -> Fast
         )
         return ingest_result_to_dto(result)
 
+    @router.post(
+        "/agents/{agent_id}/ingest/raw",
+        response_model=RawIngestResponse,
+        responses={400: {"model": ErrorResponse}},
+    )
+    async def ingest_raw(agent_id: str, request: RawIngestRequest) -> RawIngestResponse:
+        client = server_state.require_client(agent_id)
+        source = request.source_agent_id or agent_id
+
+        # Reject garbage before parsing
+        if looks_like_garbage(request.raw_text):
+            return RawIngestResponse(
+                accepted=False,
+                rejection=RejectionDTO(
+                    code="parse_rejected:garbage",
+                    message="Input looks like garbage "
+                    "(JSON fragment, escaped strings, or credentials)",
+                ),
+            )
+
+        parsed = parse_memory_store_to_fact(request.raw_text, source)
+        if parsed is None:
+            return RawIngestResponse(
+                accepted=False,
+                rejection=RejectionDTO(
+                    code="parse_rejected:unparseable",
+                    message="Could not parse input into a structured fact",
+                ),
+            )
+
+        result = await client.ingest(
+            content=parsed.content,
+            source_type=parsed.source_type,
+            tags=parsed.tags,
+        )
+        dto = ingest_result_to_dto(result)
+        return RawIngestResponse(
+            accepted=dto.accepted,
+            fact=dto.fact,
+            rejection=dto.rejection,
+            contradiction_fact_ids=dto.contradiction_fact_ids,
+            corroboration_fact_ids=dto.corroboration_fact_ids,
+            parsed_subject=parsed.content.subject,
+            parsed_predicate=parsed.content.predicate,
+        )
+
     @router.post("/agents/{agent_id}/query", response_model=list[QueryResultDTO])
     async def query(agent_id: str, request: QueryRequest) -> list[QueryResultDTO]:
         client = server_state.require_client(agent_id)
+
+        question = request.question
+        # When question is empty and raw_context is provided, extract entities
+        if not question and request.raw_context:
+            question = extract_query_from_context(
+                task_name=request.raw_context.task_name,
+                prompt=request.raw_context.prompt,
+            ) or ""
+
+        if not question:
+            return []
+
         results = await client.query(
-            question=request.question,
+            question=question,
             filters=request.filters.to_domain() if request.filters else None,
             limit=request.limit,
         )
         return [query_result_to_dto(item) for item in results]
+
+    @router.get(
+        "/agents/{agent_id}/facts",
+        response_model=list[dict[str, object]],
+    )
+    async def list_agent_facts(
+        agent_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        active_only: bool = True,
+    ) -> list[dict[str, object]]:
+        facts = await server_state.list_agent_facts(
+            agent_id,
+            limit=max(1, min(limit, 500)),
+            offset=max(0, offset),
+            active_only=active_only,
+        )
+        return [fact_to_dto(fact).model_dump(mode="json") for fact in facts]
+
+    @router.post(
+        "/extraction/run",
+        response_model=ExtractionRunResponse,
+        responses={400: {"model": ErrorResponse}},
+    )
+    async def run_extraction(request: ExtractionRunRequest) -> ExtractionRunResponse:
+        workspace_configs = (
+            [item.to_domain() for item in request.workspaces]
+            if request.workspaces is not None
+            else None
+        )
+        result = await server_state.run_daily_notes_extraction(
+            workspaces=workspace_configs,
+            expire_memory_migration_facts=request.expire_memory_migration_facts,
+        )
+        return ExtractionRunResponse(
+            started_at=result.started_at,
+            finished_at=result.finished_at,
+            expired_memory_migration_facts=result.expired_memory_migration_facts,
+            total_files_seen=result.total_files_seen,
+            total_files_processed=result.total_files_processed,
+            total_facts_extracted=result.total_facts_extracted,
+            total_facts_ingested=result.total_facts_ingested,
+            total_facts_skipped=result.total_facts_skipped,
+            total_facts_failed=result.total_facts_failed,
+            workspaces=[
+                WorkspaceExtractionStatsDTO(
+                    workspace_key=item.workspace_key,
+                    files_seen=item.files_seen,
+                    files_processed=item.files_processed,
+                    facts_extracted=item.facts_extracted,
+                    facts_ingested=item.facts_ingested,
+                    facts_skipped=item.facts_skipped,
+                    facts_failed=item.facts_failed,
+                )
+                for item in result.workspaces
+            ],
+            errors=result.errors,
+        )
 
     @router.post(
         "/agents/{agent_id}/correct",
@@ -185,6 +316,20 @@ def create_app(config: MyceliumConfig, state: ServerState | None = None) -> Fast
             reason=request.reason,
         )
         return corroboration_to_dto(result)
+
+    @router.post(
+        "/agents/{agent_id}/feedback",
+        response_model=FeedbackResultDTO,
+        responses={400: {"model": ErrorResponse}},
+    )
+    async def feedback(agent_id: str, request: FeedbackRequest) -> FeedbackResultDTO:
+        client = server_state.require_client(agent_id)
+        result = await client.feedback(
+            fact_id=request.fact_id,
+            signal=request.signal,
+            reason=request.reason,
+        )
+        return feedback_to_dto(result)
 
     @router.post(
         "/agents/{agent_id}/resolve-conflicts",
@@ -295,6 +440,12 @@ def create_app(config: MyceliumConfig, state: ServerState | None = None) -> Fast
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Decay runner not running",
+            )
+        verification_runner = getattr(server_state, "verification_runner", None)
+        if verification_runner is None or not verification_runner.running:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Verification runner not running",
             )
         return HealthResponse(status="ready")
 

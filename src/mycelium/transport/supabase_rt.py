@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
@@ -59,12 +59,12 @@ def _to_payload(event: PropagationEvent) -> str:
 def _from_payload(payload: str) -> PropagationEvent:
     data = cast("dict[str, Any]", json.loads(payload))
     created_at_raw = data.get("created_at")
-    created_at = datetime.now()
+    created_at = datetime.now(UTC)
     if isinstance(created_at_raw, str):
         try:
             created_at = datetime.fromisoformat(created_at_raw)
         except ValueError:
-            created_at = datetime.now()
+            created_at = datetime.now(UTC)
 
     return PropagationEvent(
         id=UUID(str(data["id"])),

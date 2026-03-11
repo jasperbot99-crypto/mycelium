@@ -1,7 +1,7 @@
 # Incident 6: Duplicate Job Leads (Ongoing)
 #
 # Real incident: jasper-research and jasper-planner both found Mascot AM Fyn
-# independently. Same job lead, double alert to Tobias.
+# independently. Same job lead, double alert to the operator.
 #
 # Mycelium detection: First agent ingests the job lead fact.
 # Second agent ingests identical fact → corroboration detected at ingest time.

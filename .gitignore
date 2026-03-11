@@ -26,6 +26,9 @@ venv/
 .coverage
 htmlcov/
 
+# Data exports
+lancedb_export.json
+
 # OS
 .DS_Store
 Thumbs.db

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from mycelium.domain.types import VerificationMethod, VerificationResult, VerificationStatus
@@ -54,7 +54,7 @@ class VerificationPipeline:
 
         previous_status = fact.verification_status
         confidence_delta, trust_delta = _FACT_DELTAS[status]
-        verified_at = datetime.now()
+        verified_at = datetime.now(UTC)
 
         next_confidence = round(min(1.0, max(0.0, fact.confidence + confidence_delta)), 4)
         next_trust = round(min(1.0, max(0.0, fact.trust_score + trust_delta)), 4)

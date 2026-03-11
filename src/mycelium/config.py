@@ -15,6 +15,10 @@ def _default_subscriptions() -> list[SubscriptionConfig]:
     return []
 
 
+def _default_daily_note_workspaces() -> list[DailyNotesWorkspace]:
+    return []
+
+
 @dataclass
 class SubscriptionConfig:
     """Subscription declared at connect time — synced to database."""
@@ -23,6 +27,16 @@ class SubscriptionConfig:
     priority: str = "normal"  # low, normal, high, critical
     min_confidence: float = 0.0
     source_types: list[str] | None = None
+
+
+@dataclass
+class DailyNotesWorkspace:
+    """Workspace configuration for nightly daily-notes extraction."""
+
+    workspace_key: str
+    glob_pattern: str
+    source_agent_id: str
+    correction_authority: bool = False
 
 
 @dataclass
@@ -58,6 +72,7 @@ class MyceliumConfig:
     default_confidence: float = 0.5
     query_result_limit: int = 20
     decay_cycle_interval_hours: int = 24
+    verification_cycle_interval_hours: int = 24
 
     # Operational logging
     ops_log_enabled: bool = True
@@ -73,3 +88,8 @@ class MyceliumConfig:
 
     # Agent (set per client instance)
     subscriptions: list[SubscriptionConfig] = field(default_factory=_default_subscriptions)
+
+    # Extraction (nightly pipeline)
+    daily_note_workspaces: list[DailyNotesWorkspace] = field(
+        default_factory=_default_daily_note_workspaces
+    )

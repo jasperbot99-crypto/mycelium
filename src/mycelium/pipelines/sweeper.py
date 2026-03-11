@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -95,8 +95,8 @@ class ContradictionSweeper:
         Scans facts created since the last sweep and checks each against
         all other active facts with the same subject.
         """
-        since = self._last_sweep_at or datetime.min
-        sweep_start = datetime.now()
+        since = self._last_sweep_at or datetime.min.replace(tzinfo=UTC)
+        sweep_start = datetime.now(UTC)
 
         new_facts = await self._fact_repo.find_created_since(
             since, active_only=True

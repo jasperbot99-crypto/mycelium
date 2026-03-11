@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -333,7 +333,7 @@ async def import_memory_file_records(
                 initial_confidence=MIGRATION_CONFIDENCE,
                 metadata={
                     "migrated_from": MigrationSource.MEMORY_FILE.value,
-                    "migration_date": datetime.now().isoformat(),
+                    "migration_date": datetime.now(UTC).isoformat(),
                     "original_id": record.original_id,
                 },
             )
@@ -349,7 +349,7 @@ async def import_memory_file_records(
             result.failed += 1
             result.errors.append(f"Record {record.original_id} failed: {exc}")
 
-    result.finished_at = datetime.now()
+    result.finished_at = datetime.now(UTC)
 
     if ops_logger is not None:
         await ops_logger.log(

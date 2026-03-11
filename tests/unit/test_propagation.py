@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -40,7 +40,7 @@ def _make_fact(
         source_type=source_type,
         confidence=confidence,
         trust_score=0.7,
-        valid_from=datetime.now(),
+        valid_from=datetime.now(UTC),
         tags=tags or [],
     )
 
@@ -60,6 +60,26 @@ def _make_subscription(
         min_confidence=min_confidence,
         source_types=source_types,
     )
+
+
+class _KeywordEmbeddingProvider:
+    """Small deterministic embedding provider for semantic propagation tests."""
+
+    @property
+    def dimension(self) -> int:
+        return 4
+
+    async def embed(self, text: str) -> list[float]:
+        t = text.lower()
+        return [
+            1.0 if "broker" in t else 0.0,
+            1.0 if "api" in t else 0.0,
+            1.0 if "risk" in t else 0.0,
+            1.0 if "job" in t else 0.0,
+        ]
+
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [await self.embed(text) for text in texts]
 
 
 @pytest.fixture
@@ -394,6 +414,182 @@ class TestPropagationEngine:
         assert len(events) == 1
         assert events[0].reason == "subscription:api.*"
 
+    @pytest.mark.asyncio
+    async def test_human_correction_escalates_priority_to_critical(
+        self,
+        engine: PropagationEngine,
+        sub_repo: InMemorySubscriptionRepository,
+    ) -> None:
+        sub = _make_subscription(agent_id="agent-b", topic="*", priority=Priority.NORMAL)
+        await sub_repo.sync_subscriptions("agent-b", [sub])
+
+        fact = _make_fact(tags=["api.orders"], source_type=SourceType.HUMAN_CORRECTION)
+        events = await engine.propagate(fact, "agent-a")
+
+        assert len(events) == 1
+        assert events[0].priority == Priority.CRITICAL
+        assert "priority:critical:human_correction" in events[0].reason
+
+    @pytest.mark.asyncio
+    async def test_high_confidence_conflict_escalates_priority_to_high(
+        self,
+        engine: PropagationEngine,
+        sub_repo: InMemorySubscriptionRepository,
+    ) -> None:
+        sub = _make_subscription(agent_id="agent-b", topic="*", priority=Priority.NORMAL)
+        await sub_repo.sync_subscriptions("agent-b", [sub])
+
+        fact = _make_fact(tags=["api.orders"], confidence=0.9)
+        fact.conflict_status = "unresolved"
+        events = await engine.propagate(fact, "agent-a")
+
+        assert len(events) == 1
+        assert events[0].priority == Priority.HIGH
+        assert "conflicted_high_confidence" in events[0].reason
+
+    @pytest.mark.asyncio
+    async def test_critical_context_escalates_priority_to_critical(
+        self,
+        engine: PropagationEngine,
+        sub_repo: InMemorySubscriptionRepository,
+        agent_repo: InMemoryAgentRepository,
+    ) -> None:
+        sub = _make_subscription(agent_id="agent-b", topic="api.*", priority=Priority.NORMAL)
+        await sub_repo.sync_subscriptions("agent-b", [sub])
+        await agent_repo.upsert(
+            AgentRecord(
+                id="agent-b",
+                role="tester",
+                active_context=ActiveContext(
+                    entities=("api-orders",),
+                    urgency=Urgency.CRITICAL,
+                ),
+            )
+        )
+
+        fact = _make_fact(tags=["api.orders"], source_agent_id="agent-a")
+        events = await engine.propagate(fact, "agent-a")
+
+        assert len(events) == 1
+        assert events[0].priority == Priority.CRITICAL
+        assert "critical_context" in events[0].reason
+
+    @pytest.mark.asyncio
+    async def test_context_entity_normalization_matches_eur_slash_usd(
+        self,
+        engine: PropagationEngine,
+        sub_repo: InMemorySubscriptionRepository,
+        agent_repo: InMemoryAgentRepository,
+    ) -> None:
+        sub = _make_subscription(agent_id="agent-b", topic="fx.*")
+        await sub_repo.sync_subscriptions("agent-b", [sub])
+        await agent_repo.upsert(
+            AgentRecord(
+                id="agent-b",
+                role="tester",
+                active_context=ActiveContext(
+                    entities=("EUR/USD",),
+                    urgency=Urgency.NORMAL,
+                ),
+            )
+        )
+        fact = Fact(
+            id=uuid4(),
+            content=FactContent(
+                subject="EURUSD",
+                predicate="has_status",
+                object="paused",
+            ),
+            source_agent_id="agent-a",
+            source_type=SourceType.AGENT_EXTRACTION,
+            confidence=0.7,
+            trust_score=0.7,
+            valid_from=datetime.now(UTC),
+            tags=["fx.market"],
+        )
+
+        events = await engine.propagate(fact, "agent-a")
+        assert len(events) == 1
+        assert "context:entity_match:normal" in events[0].reason
+
 
 async def _async_append(lst: list[object], item: object) -> None:
     lst.append(item)
+
+
+class TestSemanticPropagation:
+    @pytest.mark.asyncio
+    async def test_semantic_subscription_match_propagates_without_tag_match(
+        self,
+        sub_repo: InMemorySubscriptionRepository,
+        event_log: InMemoryEventLog,
+        transport: InProcessTransport,
+        agent_repo: InMemoryAgentRepository,
+    ) -> None:
+        engine = PropagationEngine(
+            subscription_repo=sub_repo,
+            event_log=event_log,
+            transport=transport,
+            agent_repo=agent_repo,
+            embedding_provider=_KeywordEmbeddingProvider(),
+            semantic_match_threshold=0.6,
+        )
+        sub = _make_subscription(agent_id="agent-b", topic="broker.*")
+        await sub_repo.sync_subscriptions("agent-b", [sub])
+
+        fact = Fact(
+            id=uuid4(),
+            content=FactContent(
+                subject="broker adapter",
+                predicate="has_status",
+                object="degraded",
+            ),
+            source_agent_id="agent-a",
+            source_type=SourceType.AGENT_EXTRACTION,
+            confidence=0.8,
+            trust_score=0.7,
+            valid_from=datetime.now(UTC),
+            tags=["trading.pipeline"],
+        )
+        events = await engine.propagate(fact, "agent-a")
+
+        assert len(events) == 1
+        assert events[0].target_agent_id == "agent-b"
+        assert "semantic:" in events[0].reason
+
+    @pytest.mark.asyncio
+    async def test_semantic_subscription_below_threshold_does_not_propagate(
+        self,
+        sub_repo: InMemorySubscriptionRepository,
+        event_log: InMemoryEventLog,
+        transport: InProcessTransport,
+        agent_repo: InMemoryAgentRepository,
+    ) -> None:
+        engine = PropagationEngine(
+            subscription_repo=sub_repo,
+            event_log=event_log,
+            transport=transport,
+            agent_repo=agent_repo,
+            embedding_provider=_KeywordEmbeddingProvider(),
+            semantic_match_threshold=0.8,
+        )
+        sub = _make_subscription(agent_id="agent-b", topic="broker.*")
+        await sub_repo.sync_subscriptions("agent-b", [sub])
+
+        fact = Fact(
+            id=uuid4(),
+            content=FactContent(
+                subject="risk budget",
+                predicate="has_status",
+                object="exhausted",
+            ),
+            source_agent_id="agent-a",
+            source_type=SourceType.AGENT_EXTRACTION,
+            confidence=0.8,
+            trust_score=0.7,
+            valid_from=datetime.now(UTC),
+            tags=["trading.pipeline"],
+        )
+        events = await engine.propagate(fact, "agent-a")
+
+        assert len(events) == 0
