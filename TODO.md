@@ -197,3 +197,11 @@ _Deferred from Phase 1 core — must complete before Phase 2._
 - [x] Reproducible benchmark runner (`benchmarks/run.py`)
 - [x] JSON + Markdown report output
 - [x] Baseline comparison input (`benchmarks/baseline.json`)
+
+## Post-Beta Hardening (2026-03-11)
+
+- [x] Migration CLI entrypoint (`mycelium-migrate`) with schema apply + source run modes
+- [x] Ordered migration runner with dry-run and fail-fast controls
+- [x] Migration guide (`docs/MIGRATION.md`)
+- [x] TokenProvider auth abstraction for embedding + LLM + memory-file extraction
+- [x] Test gap additions: restart/replay recovery, 3-agent conflict handling, ranking order, trust evolution

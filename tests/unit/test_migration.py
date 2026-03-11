@@ -25,9 +25,9 @@ from mycelium.migration.memory_file_extractor import (
     extract_from_memory_files,
     import_memory_file_records,
 )
-from mycelium.migration.runner import FullMigrationResult
+from mycelium.migration.runner import FullMigrationResult, MigrationSourceRun, run_migration_plan
 from mycelium.migration.supabase_importer import import_supabase_learnings
-from mycelium.ops.logger import InMemoryOpsLogger
+from mycelium.ops.logger import InMemoryOpsLogger, OpsLogger
 from mycelium.storage.memory import (
     InMemoryAgentRepository,
     InMemoryConflictRepository,
@@ -293,6 +293,69 @@ class TestFullMigrationResult:
         assert full.total_ingested == 0
         assert full.all_errors == []
 
+    @pytest.mark.asyncio
+    async def test_run_migration_plan_dry_run(self, client: MyceliumClient) -> None:
+        async def _importer(
+            records: list[MigrationRecord],
+            client: MyceliumClient,
+            ops_logger: OpsLogger | None = None,
+        ) -> MigrationResult:
+            del records, client, ops_logger
+            return MigrationResult(source=MigrationSource.SUPABASE)
+
+        source_run = MigrationSourceRun(
+            source=MigrationSource.SUPABASE,
+            records=[
+                MigrationRecord(subject="a", predicate="is", object="b"),
+                MigrationRecord(subject="c", predicate="is", object="d"),
+            ],
+            importer=_importer,
+        )
+        result = await run_migration_plan(None, [source_run], dry_run=True)
+        assert result.total_records == 2
+        assert result.total_ingested == 0
+        assert result.total_skipped == 2
+
+    @pytest.mark.asyncio
+    async def test_run_migration_plan_stop_on_error(self, client: MyceliumClient) -> None:
+        async def _failing_importer(
+            records: list[MigrationRecord],
+            client: MyceliumClient,
+            ops_logger: OpsLogger | None = None,
+        ) -> MigrationResult:
+            del records, client, ops_logger
+            return MigrationResult(
+                source=MigrationSource.SUPABASE,
+                total_records=1,
+                failed=1,
+                errors=["boom"],
+            )
+
+        async def _second_importer(
+            records: list[MigrationRecord],
+            client: MyceliumClient,
+            ops_logger: OpsLogger | None = None,
+        ) -> MigrationResult:
+            del records, client, ops_logger
+            return MigrationResult(source=MigrationSource.LANCEDB, total_records=1, ingested=1)
+
+        source_runs = [
+            MigrationSourceRun(
+                source=MigrationSource.SUPABASE,
+                records=[MigrationRecord(subject="a", predicate="is", object="b")],
+                importer=_failing_importer,
+            ),
+            MigrationSourceRun(
+                source=MigrationSource.LANCEDB,
+                records=[MigrationRecord(subject="c", predicate="is", object="d")],
+                importer=_second_importer,
+            ),
+        ]
+
+        result = await run_migration_plan(client, source_runs, stop_on_error=True)
+        assert len(result.results) == 1
+        assert result.total_failed == 1
+
 
 class _StubExtractor:
     def __init__(self, returned: list[MigrationRecord]) -> None:
@@ -388,6 +451,35 @@ class TestMemoryFileExtractor:
 
 
 class TestOpenAIMemoryFactExtractor:
+    @pytest.mark.asyncio
+    async def test_supports_token_provider(self) -> None:
+        class _TokenProvider:
+            async def get_token(self) -> str:
+                return "oauth-token"
+
+        extractor = OpenAIMemoryFactExtractor(token_provider=_TokenProvider())
+        response = httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"facts":[{"subject":"api-orders",'
+                                '"predicate":"moved_to","object":"/v3/orders"}]}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=response)
+        extractor.http_client = mock_client
+        await extractor.extract("# memory", file_path="/tmp/MEMORY.md")
+        _, kwargs = mock_client.post.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer oauth-token"
+
     def test_requires_api_key(self) -> None:
         with (
             patch.dict("os.environ", {}, clear=True),

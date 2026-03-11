@@ -182,11 +182,13 @@ class ServerState:
     def _build_embedding_provider(self) -> EmbeddingProvider:
         if self.config.embedding_provider is not None:
             return self.config.embedding_provider
+        if self.config.openai_token_provider is not None:
+            return OpenAIEmbeddingProvider(token_provider=self.config.openai_token_provider)
         if self.config.openai_api_key:
             return OpenAIEmbeddingProvider(api_key=self.config.openai_api_key)
         raise RuntimeError(
             "No embedding provider configured. Set MyceliumConfig.embedding_provider "
-            "or openai_api_key for server mode."
+            "or openai_api_key/openai_token_provider for server mode."
         )
 
 

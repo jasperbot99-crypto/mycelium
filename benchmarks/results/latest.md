@@ -2,10 +2,10 @@
 
 | Metric | Current | Baseline |
 |---|---:|---:|
-| ingest_p95_ms | 0.467 | 100.0 |
-| query_p95_ms | 1.357 | 50.0 |
-| propagation_p95_ms | 0.553 | 1000.0 |
-| conflict_resolution_per_s | 2872.531 | 10.0 |
+| ingest_p95_ms | 0.073 | 100.0 |
+| query_p95_ms | 0.157 | 50.0 |
+| propagation_p95_ms | 0.028 | 1000.0 |
+| conflict_resolution_per_s | 20000.0 | 10.0 |
 
 ## Spec Targets
 

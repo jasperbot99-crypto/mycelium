@@ -1,14 +1,14 @@
 {
   "ingest": {
-    "p50_ms": 0.342,
-    "p95_ms": 0.467,
-    "avg_ms": 0.363
+    "p50_ms": 0.027,
+    "p95_ms": 0.073,
+    "avg_ms": 0.032
   },
   "query": {
-    "p50_ms": 1.332,
-    "p95_ms": 1.357,
-    "avg_ms": 1.352
+    "p50_ms": 0.058,
+    "p95_ms": 0.157,
+    "avg_ms": 0.07
   },
-  "propagation_p95_ms": 0.553,
-  "conflict_resolution_per_s": 2872.531
+  "propagation_p95_ms": 0.028,
+  "conflict_resolution_per_s": 20000.0
 }

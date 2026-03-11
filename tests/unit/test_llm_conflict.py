@@ -21,10 +21,18 @@ from mycelium.llm.conflict import (
 class _DummyHttpClient:
     def __init__(self, response: httpx.Response) -> None:
         self._response = response
-        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.calls: list[tuple[str, dict[str, object], dict[str, str] | None]] = []
 
-    async def post(self, url: str, *, json: dict[str, object]) -> httpx.Response:
-        self.calls.append((url, json))
+    async def post(
+        self,
+        url: str,
+        *,
+        json: dict[str, object],
+        headers: dict[str, str] | None = None,
+        **kwargs: object,
+    ) -> httpx.Response:
+        del kwargs
+        self.calls.append((url, json, headers))
         return self._response
 
     async def aclose(self) -> None:
@@ -151,9 +159,49 @@ async def test_provider_errors_raise_conflict_provider_error() -> None:
         await resolver.resolve(conflict, fact_a, fact_b)
 
 
+@pytest.mark.asyncio
+async def test_openai_resolver_uses_token_provider_header() -> None:
+    class _TokenProvider:
+        async def get_token(self) -> str:
+            return "oauth-token"
+
+    fact_a = _make_fact(source=SourceType.AGENT_EXTRACTION, obj="healthy")
+    fact_b = _make_fact(source=SourceType.HUMAN_CORRECTION, obj="degraded")
+    conflict = Conflict(
+        id=uuid4(),
+        fact_a_id=fact_a.id,
+        fact_b_id=fact_b.id,
+        status=ConflictStatus.DETECTED,
+    )
+
+    resolver = OpenAIConflictResolver(token_provider=_TokenProvider())
+    dummy = _DummyHttpClient(
+        _json_response(
+            200,
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"winning_fact_id":"'
+                                f"{fact_b.id}"
+                                '","confidence":0.9,"rationale":"ok","escalate":false}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+    )
+    resolver.http_client = dummy
+
+    await resolver.resolve(conflict, fact_a, fact_b)
+    assert dummy.calls[0][2] == {"Authorization": "Bearer oauth-token"}
+
+
 def test_build_conflict_resolver_supports_openai_and_anthropic() -> None:
-    openai = build_conflict_resolver("openai", api_key="x")
-    anthropic = build_conflict_resolver("anthropic", api_key="x")
+    openai = build_conflict_resolver("openai", api_key="x", token_provider=None)
+    anthropic = build_conflict_resolver("anthropic", api_key="x", token_provider=None)
 
     assert isinstance(openai, OpenAIConflictResolver)
     assert isinstance(anthropic, AnthropicConflictResolver)
@@ -161,4 +209,4 @@ def test_build_conflict_resolver_supports_openai_and_anthropic() -> None:
 
 def test_build_conflict_resolver_rejects_unknown_provider() -> None:
     with pytest.raises(ValueError, match="Unsupported llm_provider"):
-        _ = build_conflict_resolver("unknown", api_key="x")
+        _ = build_conflict_resolver("unknown", api_key="x", token_provider=None)

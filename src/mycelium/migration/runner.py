@@ -2,24 +2,44 @@
 
 SPEC Section 7.8: Migration is a cutover, not gradual sync.
 When Mycelium is live, old sources are frozen, no dual-write.
-
-Order:
-1. Supabase shared_learnings (already structured, cleanest mapping)
-2. LanceDB semantic memories (need re-embedding, but structured)
-3. Memory files (requires LLM — may defer)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Protocol
+
+from mycelium.migration.base import MigrationResult, MigrationSource
 
 if TYPE_CHECKING:
-    from mycelium.migration.base import MigrationResult
+    from mycelium.client.client import MyceliumClient
+    from mycelium.migration.base import MigrationRecord
+    from mycelium.ops.logger import OpsLogger
 
 
 def _result_list() -> list[MigrationResult]:
     return []
+
+
+class MigrationImporter(Protocol):
+    """Callable importer for one migration source."""
+
+    async def __call__(
+        self,
+        records: list[MigrationRecord],
+        client: MyceliumClient,
+        ops_logger: OpsLogger | None = None,
+    ) -> MigrationResult: ...
+
+
+@dataclass(frozen=True)
+class MigrationSourceRun:
+    """One source execution plan for ordered migration."""
+
+    source: MigrationSource
+    records: list[MigrationRecord]
+    importer: MigrationImporter
 
 
 @dataclass
@@ -50,3 +70,46 @@ class FullMigrationResult:
         for r in self.results:
             errors.extend(r.errors)
         return errors
+
+
+async def run_migration_plan(
+    client: MyceliumClient | None,
+    source_runs: list[MigrationSourceRun],
+    *,
+    ops_logger: OpsLogger | None = None,
+    dry_run: bool = False,
+    stop_on_error: bool = False,
+) -> FullMigrationResult:
+    """Run an ordered migration plan.
+
+    Args:
+        client: Connected Mycelium client used for ingest.
+        source_runs: Ordered source plans.
+        ops_logger: Optional ops logger used by importers.
+        dry_run: If true, computes totals but skips ingest.
+        stop_on_error: If true, stop after the first source with failures.
+    """
+    if not dry_run and client is None:
+        raise ValueError("client is required when dry_run is False")
+
+    aggregated = FullMigrationResult()
+    for source_run in source_runs:
+        if dry_run:
+            result = MigrationResult(
+                source=source_run.source,
+                total_records=len(source_run.records),
+                skipped=len(source_run.records),
+                started_at=datetime.now(),
+                finished_at=datetime.now(),
+            )
+            aggregated.results.append(result)
+            continue
+
+        assert client is not None
+        result = await source_run.importer(source_run.records, client, ops_logger=ops_logger)
+        aggregated.results.append(result)
+
+        if stop_on_error and (result.failed > 0 or result.errors):
+            break
+
+    return aggregated

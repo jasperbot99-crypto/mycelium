@@ -239,6 +239,64 @@ async def test_conflict_resolution_accepts_confident_llm_decision() -> None:
 
 
 @pytest.mark.asyncio
+async def test_conflict_resolution_handles_three_agent_disagreement() -> None:
+    fact_repo = InMemoryFactRepository()
+    conflict_repo = InMemoryConflictRepository()
+    relation_repo = InMemoryRelationRepository()
+
+    t0 = datetime.now()
+    fact_a = Fact(
+        id=uuid4(),
+        content=FactContent(subject="service-x", predicate="has_status", object="down"),
+        source_agent_id="agent-a",
+        source_type=SourceType.AGENT_EXTRACTION,
+        confidence=0.6,
+        trust_score=0.5,
+        valid_from=t0,
+    )
+    fact_b = Fact(
+        id=uuid4(),
+        content=FactContent(subject="service-x", predicate="has_status", object="healthy"),
+        source_agent_id="agent-b",
+        source_type=SourceType.AGENT_EXTRACTION,
+        confidence=0.6,
+        trust_score=0.5,
+        valid_from=t0 + timedelta(seconds=300),
+    )
+    fact_c = Fact(
+        id=uuid4(),
+        content=FactContent(subject="service-x", predicate="has_status", object="degraded"),
+        source_agent_id="agent-c",
+        source_type=SourceType.HUMAN_CORRECTION,
+        confidence=1.0,
+        trust_score=1.0,
+        valid_from=t0 + timedelta(seconds=600),
+    )
+    for fact in (fact_a, fact_b, fact_c):
+        await fact_repo.insert(fact)
+
+    for left, right in ((fact_a, fact_b), (fact_a, fact_c), (fact_b, fact_c)):
+        await conflict_repo.insert(
+            Conflict(
+                id=uuid4(),
+                fact_a_id=left.id,
+                fact_b_id=right.id,
+                status=ConflictStatus.DETECTED,
+            )
+        )
+
+    pipeline = ConflictResolutionPipeline(
+        fact_repo=fact_repo,
+        conflict_repo=conflict_repo,
+        relation_repo=relation_repo,
+        config=MyceliumConfig(conflict_ambiguity_window_s=120),
+    )
+    resolved = await pipeline.resolve_pending()
+    assert len(resolved) == 3
+    assert all(result.status != ConflictStatus.DETECTED for result in resolved)
+
+
+@pytest.mark.asyncio
 async def test_provenance_pipeline_traces_derived_from_chain() -> None:
     fact_repo = InMemoryFactRepository()
     relation_repo = InMemoryRelationRepository()

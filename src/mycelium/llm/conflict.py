@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 import httpx
 
+from mycelium.auth.tokens import TokenProvider, build_token_provider
 from mycelium.pipelines.conflict_resolution import (
     ConflictLLMResolver,
     LLMResolutionDecision,
@@ -16,6 +16,7 @@ from mycelium.pipelines.conflict_resolution import (
 
 if TYPE_CHECKING:
     from mycelium.domain.types import Conflict, Fact
+    from mycelium.http.protocols import AsyncJsonHttpClient
 
 _OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
 _ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
@@ -25,40 +26,36 @@ class ConflictLLMProviderError(Exception):
     """Raised when a conflict-resolution provider fails."""
 
 
-class _HttpClient(Protocol):
-    async def post(self, url: str, *, json: dict[str, object]) -> httpx.Response: ...
-    async def aclose(self) -> None: ...
-
-
 class OpenAIConflictResolver(ConflictLLMResolver):
     """OpenAI-backed resolver for ambiguous conflict records."""
 
     def __init__(
         self,
         api_key: str | None = None,
+        token_provider: TokenProvider | None = None,
         *,
         model: str = "gpt-4.1-mini",
         timeout: float = 30.0,
     ) -> None:
-        key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not key:
-            raise ValueError("OpenAI API key required for conflict resolution")
+        self._token_provider = build_token_provider(
+            api_key,
+            env_var="OPENAI_API_KEY",
+            token_provider=token_provider,
+            require_token=True,
+        )
 
         self._model = model
-        self._client: _HttpClient = httpx.AsyncClient(
+        self._client: AsyncJsonHttpClient = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
+            headers={"Content-Type": "application/json"},
         )
 
     @property
-    def http_client(self) -> _HttpClient:
+    def http_client(self) -> AsyncJsonHttpClient:
         return self._client
 
     @http_client.setter
-    def http_client(self, client: _HttpClient) -> None:
+    def http_client(self, client: AsyncJsonHttpClient) -> None:
         self._client = client
 
     async def resolve(
@@ -83,7 +80,12 @@ class OpenAIConflictResolver(ConflictLLMResolver):
                 },
             ],
         }
-        response = await self._client.post(_OPENAI_CHAT_COMPLETIONS_URL, json=payload)
+        token = await self._token_provider.get_token()
+        response = await self._client.post(
+            _OPENAI_CHAT_COMPLETIONS_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
         if response.status_code != 200:
             raise ConflictLLMProviderError(
                 f"OpenAI resolver error {response.status_code}: {response.text}"
@@ -116,30 +118,33 @@ class AnthropicConflictResolver(ConflictLLMResolver):
     def __init__(
         self,
         api_key: str | None = None,
+        token_provider: TokenProvider | None = None,
         *,
         model: str = "claude-sonnet-4-20250514",
         timeout: float = 30.0,
     ) -> None:
-        key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-        if not key:
-            raise ValueError("Anthropic API key required for conflict resolution")
+        self._token_provider = build_token_provider(
+            api_key,
+            env_var="ANTHROPIC_API_KEY",
+            token_provider=token_provider,
+            require_token=True,
+        )
 
         self._model = model
-        self._client: _HttpClient = httpx.AsyncClient(
+        self._client: AsyncJsonHttpClient = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
             headers={
-                "x-api-key": key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
         )
 
     @property
-    def http_client(self) -> _HttpClient:
+    def http_client(self) -> AsyncJsonHttpClient:
         return self._client
 
     @http_client.setter
-    def http_client(self, client: _HttpClient) -> None:
+    def http_client(self, client: AsyncJsonHttpClient) -> None:
         self._client = client
 
     async def resolve(
@@ -164,7 +169,12 @@ class AnthropicConflictResolver(ConflictLLMResolver):
                 }
             ],
         }
-        response = await self._client.post(_ANTHROPIC_MESSAGES_URL, json=payload)
+        token = await self._token_provider.get_token()
+        response = await self._client.post(
+            _ANTHROPIC_MESSAGES_URL,
+            json=payload,
+            headers={"x-api-key": token},
+        )
         if response.status_code != 200:
             raise ConflictLLMProviderError(
                 f"Anthropic resolver error {response.status_code}: {response.text}"
@@ -204,13 +214,14 @@ def build_conflict_resolver(
     provider: str,
     *,
     api_key: str | None,
+    token_provider: TokenProvider | None = None,
 ) -> ConflictLLMResolver:
     """Create concrete conflict resolver from provider name."""
     name = provider.strip().lower()
     if name == "openai":
-        return OpenAIConflictResolver(api_key=api_key)
+        return OpenAIConflictResolver(api_key=api_key, token_provider=token_provider)
     if name == "anthropic":
-        return AnthropicConflictResolver(api_key=api_key)
+        return AnthropicConflictResolver(api_key=api_key, token_provider=token_provider)
     raise ValueError(f"Unsupported llm_provider: {provider}")
 
 

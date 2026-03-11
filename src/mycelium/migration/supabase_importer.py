@@ -30,7 +30,7 @@ class _RowLike(Protocol):
 
 
 class _SupabaseConn(Protocol):
-    async def fetch(self, query: str) -> list[_RowLike]: ...
+    async def fetch(self, query: str, *args: object) -> list[_RowLike]: ...
 
 
 def _as_str(value: object | None, default: str) -> str:

@@ -109,6 +109,7 @@ await client.ingest("ts-agent", {
 - [SPEC.md](./SPEC.md)
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 - [Server Mode Guide](./docs/server-mode.md)
+- [Migration Guide](./docs/MIGRATION.md)
 - [API Contract](./docs/api-contract.md)
 - [Troubleshooting](./docs/troubleshooting.md)
 - [Examples](./examples)

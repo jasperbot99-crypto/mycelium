@@ -31,6 +31,7 @@ packages = ["src/mycelium"]
 
 [project.scripts]
 mycelium-server = "mycelium.server.cli:main"
+mycelium-migrate = "mycelium.migration.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

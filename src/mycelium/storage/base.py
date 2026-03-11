@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from mycelium.storage.protocols import (
-    AgentRepository,
-    ConflictRepository,
-    EventLog,
-    FactRepository,
-    RelationRepository,
-    SubscriptionRepository,
-)
+if TYPE_CHECKING:
+    from mycelium.storage.protocols import (
+        AgentRepository,
+        ConflictRepository,
+        EventLog,
+        FactRepository,
+        RelationRepository,
+        SubscriptionRepository,
+    )
 
 
 class BaseMemoryStore(ABC):

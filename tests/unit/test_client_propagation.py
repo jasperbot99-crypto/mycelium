@@ -370,3 +370,74 @@ class TestClientPropagation:
 
         await client.disconnect()
         assert not transport.has_listener("agent-a")
+
+    @pytest.mark.asyncio
+    async def test_agent_restart_replays_pending_events_once(
+        self,
+        fact_repo: InMemoryFactRepository,
+        agent_repo: InMemoryAgentRepository,
+        sub_repo: InMemorySubscriptionRepository,
+        event_log: InMemoryEventLog,
+        transport: InProcessTransport,
+        embedding: MockEmbeddingProvider,
+        ops_logger: InMemoryOpsLogger,
+    ) -> None:
+        from uuid import uuid4
+
+        from mycelium.domain.types import Priority, Subscription
+
+        await sub_repo.sync_subscriptions(
+            "agent-b",
+            [
+                Subscription(
+                    id=uuid4(),
+                    agent_id="agent-b",
+                    topic="api.*",
+                    priority=Priority.HIGH,
+                )
+            ],
+        )
+
+        client_a = _make_client(
+            "agent-a",
+            fact_repo=fact_repo,
+            agent_repo=agent_repo,
+            sub_repo=sub_repo,
+            event_log=event_log,
+            transport=transport,
+            embedding=embedding,
+            ops_logger=ops_logger,
+        )
+        await client_a.connect()
+        await client_a.ingest(
+            FactContent(subject="api-orders", predicate="has_status", object="degraded"),
+            SourceType.AGENT_EXTRACTION,
+            tags=["api.orders"],
+        )
+
+        client_b = _make_client(
+            "agent-b",
+            fact_repo=fact_repo,
+            agent_repo=agent_repo,
+            sub_repo=sub_repo,
+            event_log=event_log,
+            transport=transport,
+            embedding=embedding,
+            ops_logger=ops_logger,
+            subscriptions=[SubscriptionConfig(topic="api.*", priority="high")],
+        )
+        received: list[PropagationEvent] = []
+
+        async def on_fact(event: PropagationEvent) -> None:
+            received.append(event)
+
+        client_b.on_fact(on_fact)
+        await client_b.connect()
+        assert len(received) == 1
+
+        await client_b.disconnect()
+        await client_b.connect()
+        assert len(received) == 1
+
+        await client_a.disconnect()
+        await client_b.disconnect()

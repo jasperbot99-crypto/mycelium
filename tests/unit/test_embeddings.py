@@ -15,6 +15,29 @@ from mycelium.embeddings.openai import EmbeddingAPIError, OpenAIEmbeddingProvide
 
 
 class TestOpenAIEmbeddingProvider:
+    @pytest.mark.asyncio
+    async def test_uses_token_provider_per_request(self) -> None:
+        class _TokenProvider:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def get_token(self) -> str:
+                self.calls += 1
+                return "dynamic-token"
+
+        provider = OpenAIEmbeddingProvider(token_provider=_TokenProvider())
+        mock_response = httpx.Response(
+            200,
+            json={"data": [{"index": 0, "embedding": [0.1] * 1536}]},
+        )
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        provider.http_client = mock_client
+
+        await provider.embed("hello")
+        _, kwargs = mock_client.post.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer dynamic-token"
+
     def test_requires_api_key(self) -> None:
         with (
             patch.dict("os.environ", {}, clear=True),

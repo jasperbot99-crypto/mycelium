@@ -19,6 +19,11 @@ from mycelium.migration.memory_file_extractor import (
     extract_from_memory_files,
     import_memory_file_records,
 )
+from mycelium.migration.runner import (
+    FullMigrationResult,
+    MigrationSourceRun,
+    run_migration_plan,
+)
 from mycelium.migration.supabase_importer import (
     extract_from_supabase,
     import_supabase_learnings,
@@ -40,4 +45,7 @@ __all__ = [
     "import_memory_file_records",
     "extract_from_supabase",
     "import_supabase_learnings",
+    "MigrationSourceRun",
+    "FullMigrationResult",
+    "run_migration_plan",
 ]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from mycelium.client.client import MyceliumClient
@@ -26,6 +28,9 @@ from mycelium.storage.memory import (
     InMemoryRelationRepository,
     InMemorySubscriptionRepository,
 )
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 @pytest.fixture
@@ -103,7 +108,7 @@ class TestMyceliumClient:
                 del conflict, fact_a, fact_b
                 raise RuntimeError("not used")
 
-        def _fake_builder(provider: str, *, api_key: str | None) -> _Resolver:
+        def _fake_builder(provider: str, *, api_key: str | None, **_: object) -> _Resolver:
             calls.append((provider, api_key))
             return _Resolver()
 
@@ -357,6 +362,44 @@ class TestMyceliumClient:
         after = await agent_repo.get_by_id("test-agent")
         assert after is not None
         assert after.trust_score < before_score
+
+    @pytest.mark.asyncio
+    async def test_trust_evolves_over_many_interactions(
+        self,
+        client: MyceliumClient,
+        agent_repo: InMemoryAgentRepository,
+    ) -> None:
+        await client.connect()
+        baseline = await agent_repo.get_by_id("test-agent")
+        assert baseline is not None
+        baseline_score = baseline.trust_score
+
+        fact_ids: list[UUID] = []
+        for idx in range(6):
+            ingested = await client.ingest(
+                FactContent(
+                    subject=f"service-{idx}",
+                    predicate="has_status",
+                    object="healthy",
+                ),
+                SourceType.AGENT_EXTRACTION,
+            )
+            assert ingested.fact is not None
+            fact_ids.append(ingested.fact.id)
+
+        for idx, fact_id in enumerate(fact_ids):
+            status = VerificationStatus.VERIFIED if idx < 5 else VerificationStatus.FAILED
+            await client.verify(
+                fact_id,
+                method=VerificationMethod.SYSTEM_PROBE,
+                status=status,
+                reason="long-run trust evolution check",
+            )
+
+        after = await agent_repo.get_by_id("test-agent")
+        assert after is not None
+        assert after.trust_score != baseline_score
+        assert after.trust_score > baseline_score
 
     @pytest.mark.asyncio
     async def test_resolve_conflicts_auto_resolves_detected_conflict(

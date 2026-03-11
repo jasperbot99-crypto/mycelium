@@ -149,6 +149,7 @@ class MyceliumClient:
             self._conflict_llm_resolver = build_conflict_resolver(
                 self._config.llm_provider,
                 api_key=self._config.llm_api_key,
+                token_provider=self._config.llm_token_provider,
             )
 
         # 1. Upsert agent record

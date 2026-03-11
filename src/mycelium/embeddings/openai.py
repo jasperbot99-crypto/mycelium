@@ -5,20 +5,19 @@ Uses httpx directly (no OpenAI SDK dependency). Implements EmbeddingProvider pro
 
 from __future__ import annotations
 
-import os
-from typing import Protocol
+from typing import TYPE_CHECKING
 
 import httpx
+
+from mycelium.auth.tokens import TokenProvider, build_token_provider
+
+if TYPE_CHECKING:
+    from mycelium.http.protocols import AsyncJsonHttpClient
 
 _OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 _DEFAULT_MODEL = "text-embedding-3-small"
 _DEFAULT_DIMENSION = 1536
 _MAX_BATCH_SIZE = 2048  # OpenAI limit
-
-
-class _HttpClient(Protocol):
-    async def post(self, url: str, *, json: dict[str, object]) -> httpx.Response: ...
-    async def aclose(self) -> None: ...
 
 
 class OpenAIEmbeddingProvider:
@@ -34,24 +33,23 @@ class OpenAIEmbeddingProvider:
     def __init__(
         self,
         api_key: str | None = None,
+        token_provider: TokenProvider | None = None,
         model: str = _DEFAULT_MODEL,
         dimension: int = _DEFAULT_DIMENSION,
         timeout: float = 30.0,
     ) -> None:
-        self._api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not self._api_key:
-            raise ValueError(
-                "OpenAI API key required. Pass api_key= or set OPENAI_API_KEY env var."
-            )
+        self._token_provider = build_token_provider(
+            api_key,
+            env_var="OPENAI_API_KEY",
+            token_provider=token_provider,
+            require_token=True,
+        )
         self._model = model
         self._dimension = dimension
         self._timeout = timeout
-        self._client: _HttpClient = httpx.AsyncClient(
+        self._client: AsyncJsonHttpClient = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
+            headers={"Content-Type": "application/json"},
         )
 
     @property
@@ -59,11 +57,11 @@ class OpenAIEmbeddingProvider:
         return self._dimension
 
     @property
-    def http_client(self) -> _HttpClient:
+    def http_client(self) -> AsyncJsonHttpClient:
         return self._client
 
     @http_client.setter
-    def http_client(self, client: _HttpClient) -> None:
+    def http_client(self, client: AsyncJsonHttpClient) -> None:
         self._client = client
 
     async def embed(self, text: str) -> list[float]:
@@ -93,7 +91,12 @@ class OpenAIEmbeddingProvider:
             "dimensions": self._dimension,
         }
 
-        response = await self._client.post(_OPENAI_EMBEDDINGS_URL, json=payload)
+        token = await self._token_provider.get_token()
+        response = await self._client.post(
+            _OPENAI_EMBEDDINGS_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
         if response.status_code != 200:
             raise EmbeddingAPIError(

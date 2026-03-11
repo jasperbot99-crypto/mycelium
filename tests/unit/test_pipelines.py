@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -440,3 +440,40 @@ class TestQueryEngine:
 
         results = await query_engine.query("anything", limit=2)
         assert len(results) <= 2
+
+    @pytest.mark.asyncio
+    async def test_query_ranking_orders_by_score(
+        self,
+        query_engine: QueryEngine,
+        fact_repo: InMemoryFactRepository,
+        embedding: MockEmbeddingProvider,
+    ) -> None:
+        content = FactContent(subject="api-orders", predicate="has_status", object="healthy")
+        vec = await embedding.embed(content.to_embedding_text())
+        older = Fact(
+            id=uuid4(),
+            content=content,
+            source_agent_id="agent-1",
+            source_type=SourceType.AGENT_EXTRACTION,
+            confidence=0.8,
+            trust_score=0.5,
+            valid_from=datetime.now() - timedelta(days=20),
+            embedding=vec,
+        )
+        newer = Fact(
+            id=uuid4(),
+            content=content,
+            source_agent_id="agent-2",
+            source_type=SourceType.AGENT_EXTRACTION,
+            confidence=0.8,
+            trust_score=0.9,
+            valid_from=datetime.now(),
+            embedding=vec,
+        )
+        await fact_repo.insert(older)
+        await fact_repo.insert(newer)
+
+        results = await query_engine.query(content.to_embedding_text(), limit=2)
+        assert len(results) == 2
+        assert results[0].fact.id == newer.id
+        assert results[0].score > results[1].score

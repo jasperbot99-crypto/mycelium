@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from mycelium.auth.tokens import TokenProvider
     from mycelium.embeddings.protocols import EmbeddingProvider
     from mycelium.transport.protocols import Transport
 
@@ -35,6 +36,7 @@ class MyceliumConfig:
     # Embedding
     embedding_provider: EmbeddingProvider | None = None
     openai_api_key: str | None = None
+    openai_token_provider: TokenProvider | None = None
 
     # Transport
     transport: Transport | None = None
@@ -44,6 +46,7 @@ class MyceliumConfig:
     # LLM (optional — for enrichment operations)
     llm_provider: str | None = None
     llm_api_key: str | None = None
+    llm_token_provider: TokenProvider | None = None
 
     # Tuning
     contradiction_threshold: float = 0.75

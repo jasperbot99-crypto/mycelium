@@ -7,7 +7,6 @@ are semi-structured and inconsistent across agents.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
+from mycelium.auth.tokens import TokenProvider, build_token_provider
 from mycelium.domain.types import FactContent, SourceType
 from mycelium.migration.base import (
     MIGRATION_CONFIDENCE,
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from mycelium.client.client import MyceliumClient
+    from mycelium.http.protocols import AsyncJsonHttpClient
     from mycelium.ops.logger import OpsLogger
 
 _OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
@@ -35,11 +36,6 @@ _DEFAULT_MODEL = "gpt-4.1-mini"
 
 class MemoryExtractionError(Exception):
     """Raised when memory file extraction fails."""
-
-
-class _HttpClient(Protocol):
-    async def post(self, url: str, *, json: dict[str, object]) -> httpx.Response: ...
-    async def aclose(self) -> None: ...
 
 
 class MemoryFactExtractor(Protocol):
@@ -72,30 +68,29 @@ class OpenAIMemoryFactExtractor:
     def __init__(
         self,
         api_key: str | None = None,
+        token_provider: TokenProvider | None = None,
         *,
         model: str = _DEFAULT_MODEL,
         timeout: float = 60.0,
     ) -> None:
-        self._api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not self._api_key:
-            raise ValueError(
-                "OpenAI API key required. Pass api_key= or set OPENAI_API_KEY env var."
-            )
+        self._token_provider = build_token_provider(
+            api_key,
+            env_var="OPENAI_API_KEY",
+            token_provider=token_provider,
+            require_token=True,
+        )
         self._model = model
-        self._client: _HttpClient = httpx.AsyncClient(
+        self._client: AsyncJsonHttpClient = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
+            headers={"Content-Type": "application/json"},
         )
 
     @property
-    def http_client(self) -> _HttpClient:
+    def http_client(self) -> AsyncJsonHttpClient:
         return self._client
 
     @http_client.setter
-    def http_client(self, client: _HttpClient) -> None:
+    def http_client(self, client: AsyncJsonHttpClient) -> None:
         self._client = client
 
     async def extract(
@@ -118,7 +113,12 @@ class OpenAIMemoryFactExtractor:
             ],
         }
 
-        response = await self._client.post(_OPENAI_CHAT_COMPLETIONS_URL, json=payload)
+        token = await self._token_provider.get_token()
+        response = await self._client.post(
+            _OPENAI_CHAT_COMPLETIONS_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
         if response.status_code != 200:
             raise MemoryExtractionError(
                 f"OpenAI API error {response.status_code}: {response.text}"
